@@ -1,0 +1,84 @@
+# Binaries for programs and plugins
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test binary, built with `go test -c`
+*.test
+
+# Output of the go coverage tool, specifically when used with LiteIDE
+*.out
+
+# Dependency directories (remove the comment below to include it)
+# vendor/
+
+# Go workspace file
+go.work
+go.work.sum
+
+# IDE-specific files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS-specific files
+.DS_Store
+Thumbs.db
+
+# Build directories
+/build/
+/dist/
+/bin/
+
+# Local environment files
+.env
+.env.local
+
+# Test coverage
+coverage.txt
+coverage.html
+*.cover
+
+# Benchmark results
+benchmark.txt
+
+# PGO profiles
+*.pgo
+
+# Temporary files
+*.tmp
+*.temp
+/tmp/
+
+# Log files
+*.log
+
+# Generated proto files (if any)
+*.pb.go
+
+# CLI binary
+/hyperway
+/cmd/hyperway/hyperway
+
+# Example binaries
+/examples/*/main
+/examples/*/*.exe
+/examples/basic/basic
+/examples/basic/server
+/examples/keepalive_retry/keepalive_retry
+
+# Root level test binaries
+/basic
+/schema.test
+
+# Archives
+*.tar.gz
+*.zip
+
+# Documentation build artifacts
+/docs/_build/
+/docs/site/

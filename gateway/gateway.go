@@ -1,0 +1,266 @@
+// Package gateway provides multi-protocol support for gRPC and Connect RPC.
+package gateway
+
+import (
+	"fmt"
+	"net/http"
+	"strings"
+
+	"google.golang.org/protobuf/types/descriptorpb"
+
+	"github.com/i2y/hyperway/schema"
+)
+
+// Gateway wraps HTTP handlers for multi-protocol support.
+type Gateway struct {
+	handler    http.Handler
+	services   []*Service
+	options    Options
+	descriptor *descriptorpb.FileDescriptorSet
+	openAPI    []byte // Cached OpenAPI JSON
+}
+
+// Options configures the gateway.
+type Options struct {
+	// EnableReflection enables gRPC reflection
+	EnableReflection bool
+	// EnableOpenAPI enables OpenAPI endpoint
+	EnableOpenAPI bool
+	// OpenAPIPath is the path to serve OpenAPI spec
+	OpenAPIPath string
+	// CORSConfig configures CORS
+	CORSConfig *CORSConfig
+	// KeepaliveParams configures client-side keepalive
+	KeepaliveParams *KeepaliveParameters
+	// KeepaliveEnforcementPolicy configures server-side keepalive enforcement
+	KeepaliveEnforcementPolicy *KeepaliveEnforcementPolicy
+}
+
+// CORSConfig configures CORS settings.
+type CORSConfig struct {
+	AllowedOrigins   []string
+	AllowedMethods   []string
+	AllowedHeaders   []string
+	AllowCredentials bool
+	MaxAge           int
+}
+
+// Service represents a service with its handlers.
+type Service struct {
+	Name        string
+	Package     string
+	Handlers    map[string]http.Handler
+	Descriptors *descriptorpb.FileDescriptorSet
+}
+
+// New creates a new gateway.
+func New(services []*Service, opts Options) (*Gateway, error) {
+	if opts.OpenAPIPath == "" {
+		opts.OpenAPIPath = "/openapi.json"
+	}
+
+	// Build FileDescriptorSet from all services
+	fdset := &descriptorpb.FileDescriptorSet{}
+	for _, svc := range services {
+		if svc.Descriptors != nil {
+			fdset.File = append(fdset.File, svc.Descriptors.File...)
+		}
+	}
+
+	// For now, create a simple mux that handles all protocols
+	// A proper implementation would use Vanguard with a type resolver
+	mux := http.NewServeMux()
+
+	for _, svc := range services {
+		for path, handler := range svc.Handlers {
+			mux.Handle(path, handler)
+		}
+	}
+
+	// Wrap the mux to add multi-protocol support headers
+	multiProtocolHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Add CORS headers for gRPC-Web
+		if origin := r.Header.Get("Origin"); origin != "" {
+			w.Header().Set("Access-Control-Allow-Origin", origin)
+			w.Header().Set("Access-Control-Allow-Methods", "POST, GET, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Headers", "Accept, Content-Type, Content-Length, Accept-Encoding, Authorization, X-CSRF-Token, Connect-Protocol-Version, X-Grpc-Web, X-User-Agent")
+			w.Header().Set("Access-Control-Expose-Headers", "Grpc-Status, Grpc-Message, Grpc-Status-Details-Bin")
+
+			if r.Method == "OPTIONS" {
+				return
+			}
+		}
+
+		mux.ServeHTTP(w, r)
+	})
+
+	gw := &Gateway{
+		handler:    multiProtocolHandler,
+		services:   services,
+		options:    opts,
+		descriptor: fdset,
+	}
+
+	// Add reflection handlers if enabled
+	if opts.EnableReflection {
+		reflectionHandlers, err := gw.CreateReflectionHandlers()
+		if err != nil {
+			return nil, fmt.Errorf("failed to create reflection handlers: %w", err)
+		}
+
+		// Register reflection handlers
+		for path, handler := range reflectionHandlers {
+			mux.Handle(path, handler)
+		}
+	}
+
+	// Generate OpenAPI if enabled
+	if opts.EnableOpenAPI {
+		info := OpenAPIInfo{
+			Title:   "Hyperway API",
+			Version: "1.0.0",
+		}
+
+		spec, err := GenerateOpenAPI(fdset, info)
+		if err != nil {
+			return nil, fmt.Errorf("failed to generate OpenAPI: %w", err)
+		}
+
+		gw.openAPI, err = MarshalOpenAPI(spec)
+		if err != nil {
+			return nil, fmt.Errorf("failed to marshal OpenAPI: %w", err)
+		}
+	}
+
+	return gw, nil
+}
+
+// ServeHTTP implements http.Handler.
+func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	// Handle CORS if configured
+	if g.options.CORSConfig != nil {
+		g.handleCORS(w, r)
+		if r.Method == http.MethodOptions {
+			return
+		}
+	}
+
+	// Handle OpenAPI endpoint
+	if g.options.EnableOpenAPI && r.URL.Path == g.options.OpenAPIPath {
+		g.serveOpenAPI(w, r)
+		return
+	}
+
+	// Handle proto export endpoints
+	// Only match exact paths for proto export, not all paths starting with /proto
+	if r.URL.Path == "/proto" || r.URL.Path == "/proto/" || r.URL.Path == "/proto.zip" || strings.HasPrefix(r.URL.Path, "/proto/") {
+		g.serveProtoExport(w, r)
+		return
+	}
+
+	// Pass to handler
+	g.handler.ServeHTTP(w, r)
+}
+
+// handleCORS handles CORS headers.
+func (g *Gateway) handleCORS(w http.ResponseWriter, r *http.Request) {
+	cfg := g.options.CORSConfig
+
+	// Set allowed origin
+	origin := r.Header.Get("Origin")
+	if len(cfg.AllowedOrigins) > 0 {
+		for _, allowed := range cfg.AllowedOrigins {
+			if allowed == "*" || allowed == origin {
+				w.Header().Set("Access-Control-Allow-Origin", origin)
+				break
+			}
+		}
+	}
+
+	// Set other CORS headers
+	if len(cfg.AllowedMethods) > 0 {
+		w.Header().Set("Access-Control-Allow-Methods", joinStrings(cfg.AllowedMethods))
+	}
+	if len(cfg.AllowedHeaders) > 0 {
+		w.Header().Set("Access-Control-Allow-Headers", joinStrings(cfg.AllowedHeaders))
+	}
+	if cfg.AllowCredentials {
+		w.Header().Set("Access-Control-Allow-Credentials", "true")
+	}
+	if cfg.MaxAge > 0 {
+		w.Header().Set("Access-Control-Max-Age", fmt.Sprintf("%d", cfg.MaxAge))
+	}
+}
+
+// serveOpenAPI serves the OpenAPI specification.
+func (g *Gateway) serveOpenAPI(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	if g.openAPI != nil {
+		_, _ = w.Write(g.openAPI)
+	} else {
+		_, _ = w.Write([]byte(`{"openapi":"3.0.0","info":{"title":"Hyperway API","version":"1.0.0"}}`))
+	}
+}
+
+// joinStrings joins strings with comma.
+func joinStrings(strs []string) string {
+	result := ""
+	for i, s := range strs {
+		if i > 0 {
+			result += ", "
+		}
+		result += s
+	}
+	return result
+}
+
+// ServiceBuilder helps build services.
+type ServiceBuilder struct {
+	name        string
+	packageName string
+	handlers    map[string]http.Handler
+	builder     *schema.Builder
+}
+
+// NewServiceBuilder creates a new service builder.
+func NewServiceBuilder(name, packageName string) *ServiceBuilder {
+	return &ServiceBuilder{
+		name:        name,
+		packageName: packageName,
+		handlers:    make(map[string]http.Handler),
+		builder: schema.NewBuilder(schema.BuilderOptions{
+			PackageName: packageName,
+		}),
+	}
+}
+
+// AddHandler adds a handler to the service.
+func (sb *ServiceBuilder) AddHandler(path string, handler http.Handler) *ServiceBuilder {
+	sb.handlers[path] = handler
+	return sb
+}
+
+// Build creates the service.
+func (sb *ServiceBuilder) Build() (*Service, error) {
+	// Build FileDescriptorSet from registered types
+	// This is simplified - in real implementation, we'd track types from handlers
+	fdset := &descriptorpb.FileDescriptorSet{}
+
+	return &Service{
+		Name:        sb.name,
+		Package:     sb.packageName,
+		Handlers:    sb.handlers,
+		Descriptors: fdset,
+	}, nil
+}
+
+// DefaultCORSConfig returns a permissive CORS configuration for development.
+func DefaultCORSConfig() *CORSConfig {
+	return &CORSConfig{
+		AllowedOrigins:   []string{"*"},
+		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
+		AllowedHeaders:   []string{"*"},
+		AllowCredentials: true,
+		MaxAge:           24 * 60 * 60, // 24 hours in seconds
+	}
+}

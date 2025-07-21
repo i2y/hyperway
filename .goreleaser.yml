@@ -1,0 +1,71 @@
+version: 2
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: hyperway
+    main: ./cmd/hyperway
+    binary: hyperway
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w
+      - -X main.version={{.Version}}
+      - -X main.commit={{.Commit}}
+      - -X main.buildDate={{.Date}}
+
+archives:
+  - id: hyperway
+    name_template: >-
+      {{ .ProjectName }}_
+      {{- title .Os }}_
+      {{- if eq .Arch "amd64" }}x86_64
+      {{- else if eq .Arch "386" }}i386
+      {{- else }}{{ .Arch }}{{ end }}
+    format_overrides:
+      - goos: windows
+        format: zip
+
+checksum:
+  name_template: 'checksums.txt'
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - '^docs:'
+      - '^test:'
+      - '^chore:'
+      - '^style:'
+      - '^refactor:'
+
+release:
+  github:
+    owner: i2y
+    name: hyperway
+  prerelease: auto
+  name_template: "{{.ProjectName}} v{{.Version}}"
+  
+brews:
+  - repository:
+      owner: i2y
+      name: homebrew-tap
+    name: hyperway
+    homepage: "https://github.com/i2y/hyperway"
+    description: "High-performance RPC framework with dynamic proto generation"
+    license: "MIT"
+    skip_upload: auto
+    test: |
+      system "#{bin}/hyperway", "version"
