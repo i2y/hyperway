@@ -2,7 +2,7 @@
 
 **Build gRPC/Connect services in Go without writing a single `.proto` file.**
 
-Hyperway is a high-performance RPC framework that implements the Connect-RPC and gRPC protocols while letting you define your API using Go structs. It eliminates the need for protobuf files while maintaining full wire compatibility with Connect/gRPC clients. Under the hood, it leverages [hyperpb](https://github.com/bufbuild/hyperpb-go) for faster dynamic protobuf parsing.
+Hyperway is an RPC framework that implements the Connect-RPC and gRPC protocols while letting you define your API using Go structs. It eliminates the need for protobuf files while maintaining full wire compatibility with Connect/gRPC clients. Under the hood, it leverages [hyperpb](https://github.com/bufbuild/hyperpb-go) for optimized dynamic protobuf parsing with performance comparable to generated code.
 
 ## 🚀 Why Hyperway?
 
