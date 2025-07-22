@@ -9,8 +9,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/jhump/protoreflect/desc"
-	"github.com/jhump/protoreflect/desc/protoprint"
+	"github.com/jhump/protoreflect/v2/protoprint"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protodesc"
 	"google.golang.org/protobuf/reflect/protoreflect"
@@ -61,8 +60,8 @@ func NewExporter(opts ExportOptions) *Exporter {
 func (e *Exporter) ExportFileDescriptorSet(fdset *descriptorpb.FileDescriptorSet) (map[string]string, error) {
 	result := make(map[string]string)
 
-	// Convert FileDescriptorProtos to desc.FileDescriptor
-	files, err := desc.CreateFileDescriptors(fdset.File)
+	// Convert FileDescriptorProtos to protoreflect.FileDescriptor
+	files, err := protodesc.NewFiles(fdset)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create file descriptors: %w", err)
 	}
@@ -76,19 +75,31 @@ func (e *Exporter) ExportFileDescriptorSet(fdset *descriptorpb.FileDescriptorSet
 	}
 
 	// Export each file
-	for _, fd := range files {
+	var exportErr error
+	files.RangeFiles(func(fd protoreflect.FileDescriptor) bool {
 		var buf bytes.Buffer
 		if err := e.printer.PrintProtoFile(fd, &buf); err != nil {
-			return nil, fmt.Errorf("failed to export %s: %w", fd.GetName(), err)
+			// Store error and stop iteration
+			exportErr = fmt.Errorf("failed to export %s: %w", fd.Path(), err)
+			return false
 		}
 		content := buf.String()
 
 		// Fix Editions syntax format if needed
-		if fdp, ok := fdMap[fd.GetName()]; ok && fdp.Edition != nil {
-			content = fixEditionsSyntax(content, fdp.Edition)
+		if fdp, ok := fdMap[fd.Path()]; ok {
+			if fdp.Edition != nil {
+				content = fixEditionsSyntax(content, fdp.Edition)
+			}
+			// Fix proto3 optional fields
+			content = fixProto3Optional(content, fdp)
 		}
 
-		result[fd.GetName()] = content
+		result[fd.Path()] = content
+		return true
+	})
+
+	if exportErr != nil {
+		return nil, exportErr
 	}
 
 	return result, nil
@@ -96,25 +107,44 @@ func (e *Exporter) ExportFileDescriptorSet(fdset *descriptorpb.FileDescriptorSet
 
 // ExportFileDescriptorProto exports a single proto file.
 func (e *Exporter) ExportFileDescriptorProto(fdp *descriptorpb.FileDescriptorProto) (string, error) {
-	// Convert to desc.FileDescriptor
-	fd, err := desc.CreateFileDescriptor(fdp)
+	// Create a FileDescriptorSet with just this file
+	fdset := &descriptorpb.FileDescriptorSet{
+		File: []*descriptorpb.FileDescriptorProto{fdp},
+	}
+
+	// Convert to protoreflect.FileDescriptor
+	files, err := protodesc.NewFiles(fdset)
 	if err != nil {
 		return "", fmt.Errorf("failed to create file descriptor: %w", err)
 	}
 
-	var buf bytes.Buffer
-	if err := e.printer.PrintProtoFile(fd, &buf); err != nil {
-		return "", fmt.Errorf("failed to export proto: %w", err)
-	}
+	// Get the first (and only) file
+	var result string
+	var exportErr error
+	files.RangeFiles(func(fd protoreflect.FileDescriptor) bool {
+		var buf bytes.Buffer
+		if err := e.printer.PrintProtoFile(fd, &buf); err != nil {
+			// Store error for return
+			exportErr = fmt.Errorf("failed to export proto: %w", err)
+			return false
+		}
+		result = buf.String()
+		return true
+	})
 
-	content := buf.String()
+	if exportErr != nil {
+		return "", exportErr
+	}
 
 	// Fix Editions syntax format if needed
 	if fdp.Edition != nil {
-		content = fixEditionsSyntax(content, fdp.Edition)
+		result = fixEditionsSyntax(result, fdp.Edition)
 	}
 
-	return content, nil
+	// Fix proto3 optional fields
+	result = fixProto3Optional(result, fdp)
+
+	return result, nil
 }
 
 // ExportToZip exports all proto files to a ZIP archive.
@@ -155,10 +185,32 @@ func (e *Exporter) ExportToZip(fdset *descriptorpb.FileDescriptorSet) ([]byte, e
 	return buf.Bytes(), nil
 }
 
-// ConvertToFileDescriptor converts a FileDescriptorProto to desc.FileDescriptor.
+// ConvertToFileDescriptor converts a FileDescriptorProto to protoreflect.FileDescriptor.
 // This is a helper function for cases where you need the intermediate representation.
-func ConvertToFileDescriptor(fdp *descriptorpb.FileDescriptorProto) (*desc.FileDescriptor, error) {
-	return desc.CreateFileDescriptor(fdp)
+func ConvertToFileDescriptor(fdp *descriptorpb.FileDescriptorProto) (protoreflect.FileDescriptor, error) {
+	// Create a FileDescriptorSet with just this file
+	fdset := &descriptorpb.FileDescriptorSet{
+		File: []*descriptorpb.FileDescriptorProto{fdp},
+	}
+
+	// Convert to protoreflect.FileDescriptor
+	files, err := protodesc.NewFiles(fdset)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create file descriptor: %w", err)
+	}
+
+	// Get the first (and only) file
+	var result protoreflect.FileDescriptor
+	files.RangeFiles(func(fd protoreflect.FileDescriptor) bool {
+		result = fd
+		return false // stop after first file
+	})
+
+	if result == nil {
+		return nil, fmt.Errorf("no file descriptor found")
+	}
+
+	return result, nil
 }
 
 // ConvertFromRegistry converts from protoreflect.FileDescriptor to FileDescriptorProto.
@@ -231,4 +283,100 @@ func fixEditionsSyntax(content string, edition *descriptorpb.Edition) string {
 	}
 
 	return strings.Join(lines, "\n")
+}
+
+// fixProto3Optional adds the 'optional' keyword to proto3 optional fields.
+// This is a workaround for protoprint v2.0.0-beta.2 not properly handling proto3_optional.
+func fixProto3Optional(content string, fdp *descriptorpb.FileDescriptorProto) string {
+	// Only process proto3 files
+	if fdp.GetSyntax() != "proto3" {
+		return content
+	}
+
+	// Process each message
+	for _, msg := range fdp.MessageType {
+		content = fixProto3OptionalInMessage(content, msg)
+	}
+
+	return content
+}
+
+// fixProto3OptionalInMessage processes a single message for proto3 optional fields.
+func fixProto3OptionalInMessage(content string, msg *descriptorpb.DescriptorProto) string {
+	lines := strings.Split(content, "\n")
+
+	for _, field := range msg.Field {
+		if field.GetProto3Optional() {
+			// Find the field declaration and add 'optional' keyword
+			fieldPattern := fmt.Sprintf("%s %s = %d",
+				getFieldTypeName(field),
+				field.GetName(),
+				field.GetNumber())
+
+			for i, line := range lines {
+				trimmed := strings.TrimSpace(line)
+				if strings.Contains(trimmed, fieldPattern) && !strings.HasPrefix(trimmed, "optional ") {
+					// Add 'optional' keyword
+					indent := line[:len(line)-len(trimmed)]
+					lines[i] = indent + "optional " + trimmed
+					break
+				}
+			}
+		}
+	}
+
+	// Process nested messages
+	for _, nested := range msg.NestedType {
+		content = strings.Join(lines, "\n")
+		content = fixProto3OptionalInMessage(content, nested)
+		lines = strings.Split(content, "\n")
+	}
+
+	return strings.Join(lines, "\n")
+}
+
+// getFieldTypeName returns the type name for a field.
+func getFieldTypeName(field *descriptorpb.FieldDescriptorProto) string {
+	// Handle message and enum types
+	if field.GetType() == descriptorpb.FieldDescriptorProto_TYPE_MESSAGE ||
+		field.GetType() == descriptorpb.FieldDescriptorProto_TYPE_ENUM {
+		// Remove leading dots and package prefix for cleaner output
+		typeName := field.GetTypeName()
+		typeName = strings.TrimPrefix(typeName, ".")
+		parts := strings.Split(typeName, ".")
+		return parts[len(parts)-1]
+	}
+
+	// Handle scalar types
+	return getScalarTypeName(field.GetType())
+}
+
+// getScalarTypeName returns the type name for scalar types.
+func getScalarTypeName(fieldType descriptorpb.FieldDescriptorProto_Type) string {
+	// Map of field types to their string representations
+	typeNames := map[descriptorpb.FieldDescriptorProto_Type]string{
+		descriptorpb.FieldDescriptorProto_TYPE_DOUBLE:   "double",
+		descriptorpb.FieldDescriptorProto_TYPE_FLOAT:    "float",
+		descriptorpb.FieldDescriptorProto_TYPE_INT64:    "int64",
+		descriptorpb.FieldDescriptorProto_TYPE_UINT64:   "uint64",
+		descriptorpb.FieldDescriptorProto_TYPE_INT32:    "int32",
+		descriptorpb.FieldDescriptorProto_TYPE_FIXED64:  "fixed64",
+		descriptorpb.FieldDescriptorProto_TYPE_FIXED32:  "fixed32",
+		descriptorpb.FieldDescriptorProto_TYPE_BOOL:     "bool",
+		descriptorpb.FieldDescriptorProto_TYPE_STRING:   "string",
+		descriptorpb.FieldDescriptorProto_TYPE_BYTES:    "bytes",
+		descriptorpb.FieldDescriptorProto_TYPE_UINT32:   "uint32",
+		descriptorpb.FieldDescriptorProto_TYPE_SFIXED32: "sfixed32",
+		descriptorpb.FieldDescriptorProto_TYPE_SFIXED64: "sfixed64",
+		descriptorpb.FieldDescriptorProto_TYPE_SINT32:   "sint32",
+		descriptorpb.FieldDescriptorProto_TYPE_SINT64:   "sint64",
+		descriptorpb.FieldDescriptorProto_TYPE_GROUP:    "group", // deprecated but still in the enum
+		descriptorpb.FieldDescriptorProto_TYPE_MESSAGE:  "message",
+		descriptorpb.FieldDescriptorProto_TYPE_ENUM:     "enum",
+	}
+
+	if name, ok := typeNames[fieldType]; ok {
+		return name
+	}
+	return "unknown"
 }

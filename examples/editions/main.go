@@ -8,7 +8,6 @@ import (
 	"net/http"
 
 	"github.com/i2y/hyperway/rpc"
-	"github.com/i2y/hyperway/schema"
 )
 
 // UserRequest represents a user creation request.
@@ -41,14 +40,13 @@ func main() {
 	// Create a service using Protobuf Editions 2023
 	svc := rpc.NewService("UserService",
 		rpc.WithPackage("example.user.v1"),
-		rpc.WithEdition(schema.Edition2023), // Enable Editions mode
+		rpc.WithEdition("2023"), // Enable Editions mode
 		rpc.WithValidation(true),
+		rpc.WithReflection(true),
 	)
 
 	// Register the CreateUser method
-	rpc.MustRegister(svc,
-		rpc.NewMethod("CreateUser", CreateUser),
-	)
+	rpc.MustRegisterTyped(svc, "CreateUser", CreateUser)
 
 	// Export the proto definition to see the editions syntax
 	protoContent, err := svc.ExportProto()
