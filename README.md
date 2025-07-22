@@ -110,7 +110,9 @@ func main() {
     )
     
     // Register your handlers
-    rpc.MustRegisterTyped(svc, "CreateUser", createUser)
+    if err := rpc.Register(svc, "CreateUser", createUser); err != nil {
+        log.Fatal(err)
+    }
     
     // Start serving (supports gRPC and Connect RPC protocols)
     gateway, _ := rpc.NewGateway(svc)
@@ -309,7 +311,9 @@ func main() {
     )
     
     // Register methods - no need to specify types!
-    rpc.MustRegisterTyped(svc, "CreatePost", blogService.CreatePost)
+    if err := rpc.Register(svc, "CreatePost", blogService.CreatePost); err != nil {
+        log.Fatal(err)
+    }
     
     // Create gateway and serve
     gateway, err := rpc.NewGateway(svc)
@@ -333,10 +337,10 @@ authSvc := rpc.NewService("AuthService", rpc.WithPackage("api.v1"))
 adminSvc := rpc.NewService("AdminService", rpc.WithPackage("api.v1"))
 
 // Register handlers
-rpc.MustRegisterTyped(userSvc, "CreateUser", createUser)
-rpc.MustRegisterTyped(userSvc, "GetUser", getUser)
-rpc.MustRegisterTyped(authSvc, "Login", login)
-rpc.MustRegisterTyped(adminSvc, "DeleteUser", deleteUser)
+rpc.Register(userSvc, "CreateUser", createUser)
+rpc.Register(userSvc, "GetUser", getUser)
+rpc.Register(authSvc, "Login", login)
+rpc.Register(adminSvc, "DeleteUser", deleteUser)
 
 // Serve all services on one port
 gateway, _ := rpc.NewGateway(userSvc, authSvc, adminSvc)
@@ -348,7 +352,7 @@ For more control, you can use the builder pattern:
 
 ```go
 // Use the builder pattern for additional options
-rpc.MustRegister(svc,
+rpc.MustRegisterMethod(svc,
     rpc.NewMethod("CreateUser", createUser).
         Validate(true).
         WithInterceptors(customInterceptor),

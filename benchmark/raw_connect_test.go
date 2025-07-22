@@ -234,7 +234,7 @@ func BenchmarkHyperway_WithValidation(b *testing.B) {
 		}, nil
 	}
 
-	rpc.MustRegister(svc,
+	rpc.MustRegisterMethod(svc,
 		rpc.NewMethod("Echo", validatedHandler).
 			In(ValidatedRequest{}).
 			Out(EchoResponse{}),

@@ -16,7 +16,7 @@ import (
 func BenchmarkHTTP_FullLatency_JSON(b *testing.B) {
 	svc := rpc.NewService("LatencyService", rpc.WithPackage("bench.v1"))
 
-	rpc.MustRegister(svc,
+	rpc.MustRegisterMethod(svc,
 		rpc.NewMethod("Echo", echoHandler).
 			In(EchoRequest{}).
 			Out(EchoResponse{}),
@@ -77,7 +77,7 @@ func BenchmarkHTTP_FullLatency_JSON(b *testing.B) {
 func BenchmarkHTTP_FullLatency_LargePayload(b *testing.B) {
 	svc := rpc.NewService("LatencyService", rpc.WithPackage("bench.v1"))
 
-	rpc.MustRegister(svc,
+	rpc.MustRegisterMethod(svc,
 		rpc.NewMethod("Process", processHandler).
 			In(LargeRequest{}).
 			Out(LargeResponse{}),
@@ -149,7 +149,7 @@ func BenchmarkHTTP_FullLatency_LargePayload(b *testing.B) {
 func BenchmarkHTTP_ParallelRequests(b *testing.B) {
 	svc := rpc.NewService("LatencyService", rpc.WithPackage("bench.v1"))
 
-	rpc.MustRegister(svc,
+	rpc.MustRegisterMethod(svc,
 		rpc.NewMethod("Echo", echoHandler).
 			In(EchoRequest{}).
 			Out(EchoResponse{}),

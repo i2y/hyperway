@@ -80,8 +80,12 @@ func TestBasicFunctionality(t *testing.T) {
 	)
 
 	// Register methods
-	rpc.MustRegisterTyped(svc, "Echo", echoHandler)
-	rpc.MustRegisterTyped(svc, "Error", errorHandler)
+	if err := rpc.Register(svc, "Echo", echoHandler); err != nil {
+		t.Fatal(err)
+	}
+	if err := rpc.Register(svc, "Error", errorHandler); err != nil {
+		t.Fatal(err)
+	}
 
 	// Create gateway
 	gateway, err := rpc.NewGateway(svc)
@@ -208,7 +212,9 @@ func TestBasicFunctionality(t *testing.T) {
 // TestProtocolSupport tests multi-protocol support
 func TestProtocolSupport(t *testing.T) {
 	svc := rpc.NewService("ProtocolTest", rpc.WithPackage("protocol.v1"))
-	rpc.MustRegisterTyped(svc, "Test", echoHandler)
+	if err := rpc.Register(svc, "Test", echoHandler); err != nil {
+		t.Fatal(err)
+	}
 
 	gateway, err := rpc.NewGateway(svc)
 	if err != nil {
@@ -309,7 +315,9 @@ func TestDataTypeSupport(t *testing.T) {
 	}
 
 	svc := rpc.NewService("DataTypeService", rpc.WithPackage("datatype.v1"))
-	rpc.MustRegisterTyped(svc, "Echo", handler)
+	if err := rpc.Register(svc, "Echo", handler); err != nil {
+		t.Fatal(err)
+	}
 
 	gateway, err := rpc.NewGateway(svc)
 	if err != nil {
@@ -405,7 +413,9 @@ func TestDataTypeSupport(t *testing.T) {
 // TestOpenAPIGeneration tests OpenAPI spec generation
 func TestOpenAPIGeneration(t *testing.T) {
 	svc := rpc.NewService("OpenAPITest", rpc.WithPackage("openapi.v1"))
-	rpc.MustRegisterTyped(svc, "Test", echoHandler)
+	if err := rpc.Register(svc, "Test", echoHandler); err != nil {
+		t.Fatal(err)
+	}
 
 	gateway, err := rpc.NewGateway(svc)
 	if err != nil {

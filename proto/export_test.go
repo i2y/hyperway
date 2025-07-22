@@ -28,7 +28,9 @@ func TestExportProto(t *testing.T) {
 	// Create a test service
 	svc := rpc.NewService("TestService", rpc.WithPackage("test.v1"))
 
-	rpc.MustRegisterTyped(svc, "TestMethod", testHandler)
+	if err := rpc.Register(svc, "TestMethod", testHandler); err != nil {
+		t.Fatal(err)
+	}
 
 	// Export proto
 	protoContent, err := svc.ExportProto()
@@ -64,7 +66,9 @@ func TestExportAllProtos(t *testing.T) {
 	// Create a test service
 	svc := rpc.NewService("TestService", rpc.WithPackage("test.v1"))
 
-	rpc.MustRegisterTyped(svc, "TestMethod", testHandler)
+	if err := rpc.Register(svc, "TestMethod", testHandler); err != nil {
+		t.Fatal(err)
+	}
 
 	// Export all protos
 	files, err := svc.ExportAllProtos()
@@ -119,7 +123,9 @@ func TestExportToZip(t *testing.T) {
 	// Create a test service
 	svc := rpc.NewService("TestService", rpc.WithPackage("test.v1"))
 
-	rpc.MustRegisterTyped(svc, "TestMethod", testHandler)
+	if err := rpc.Register(svc, "TestMethod", testHandler); err != nil {
+		t.Fatal(err)
+	}
 
 	// Get FileDescriptorSet
 	fdset := svc.GetFileDescriptorSet()
@@ -148,7 +154,9 @@ func TestExportOptions(t *testing.T) {
 	// Create a test service
 	svc := rpc.NewService("TestService", rpc.WithPackage("test.v1"))
 
-	rpc.MustRegisterTyped(svc, "TestMethod", testHandler)
+	if err := rpc.Register(svc, "TestMethod", testHandler); err != nil {
+		t.Fatal(err)
+	}
 
 	// Get FileDescriptorSet
 	fdset := svc.GetFileDescriptorSet()

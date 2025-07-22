@@ -46,7 +46,7 @@ func BenchmarkHyperway_ServiceSetup(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		svc := rpc.NewService("BenchService", rpc.WithPackage("bench.v1"))
-		rpc.MustRegister(svc,
+		rpc.MustRegisterMethod(svc,
 			rpc.NewMethod("Process", benchHandler).
 				In(BenchRequest{}).
 				Out(BenchResponse{}),
@@ -129,7 +129,7 @@ func BenchmarkProtobuf_Generated(b *testing.B) {
 // Memory allocation comparison
 func BenchmarkHyperway_MemoryAllocation(b *testing.B) {
 	svc := rpc.NewService("BenchService", rpc.WithPackage("bench.v1"))
-	rpc.MustRegister(svc,
+	rpc.MustRegisterMethod(svc,
 		rpc.NewMethod("Process", benchHandler).
 			In(BenchRequest{}).
 			Out(BenchResponse{}),

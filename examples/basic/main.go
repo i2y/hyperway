@@ -60,8 +60,12 @@ func main() {
 	)
 
 	// Register methods - types are automatically inferred!
-	rpc.MustRegisterTyped(svc, "CreateUser", createUser)
-	rpc.MustRegisterTyped(svc, "GetUser", getUser)
+	if err := rpc.Register(svc, "CreateUser", createUser); err != nil {
+		log.Fatalf("Failed to register CreateUser: %v", err)
+	}
+	if err := rpc.Register(svc, "GetUser", getUser); err != nil {
+		log.Fatalf("Failed to register GetUser: %v", err)
+	}
 
 	// Create gateway
 	gateway, err := rpc.NewGateway(svc)

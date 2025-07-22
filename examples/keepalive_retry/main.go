@@ -109,7 +109,7 @@ func main() {
 	retryInterceptor := rpc.NewRetryInterceptor(&serviceConfig)
 
 	// Register method with retry interceptor
-	rpc.MustRegister(svc,
+	rpc.MustRegisterMethod(svc,
 		rpc.NewMethod("Echo", EchoHandler).
 			WithInterceptors(retryInterceptor),
 	)

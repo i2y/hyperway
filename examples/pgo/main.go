@@ -54,7 +54,9 @@ func main() {
 	)
 
 	// Register method
-	rpc.MustRegisterTyped(svc, "ProcessMessage", processMessage)
+	if err := rpc.Register(svc, "ProcessMessage", processMessage); err != nil {
+		log.Fatalf("Failed to register ProcessMessage: %v", err)
+	}
 
 	// Create gateway
 	gateway, err := rpc.NewGateway(svc)

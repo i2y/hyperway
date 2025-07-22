@@ -130,7 +130,7 @@ RetryThrottling: &rpc.RetryThrottling{
 retryInterceptor := rpc.NewRetryInterceptor(&serviceConfig)
 
 // Apply to specific methods
-rpc.MustRegister(svc,
+rpc.MustRegisterMethod(svc,
     rpc.NewMethod("MyMethod", handler).
         WithInterceptors(retryInterceptor),
 )

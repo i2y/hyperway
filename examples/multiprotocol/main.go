@@ -53,7 +53,9 @@ func main() {
 	)
 
 	// Register the echo method
-	rpc.MustRegisterTyped(svc, "Echo", echoHandler)
+	if err := rpc.Register(svc, "Echo", echoHandler); err != nil {
+		log.Fatalf("Failed to register Echo: %v", err)
+	}
 
 	// Create gateway
 	gateway, err := rpc.NewGateway(svc)

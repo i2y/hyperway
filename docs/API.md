@@ -40,7 +40,7 @@ svc := rpc.NewService("UserService",
 
 ### Type-Safe Registration (Recommended)
 
-#### `rpc.MustRegisterTyped[TIn, TOut](svc *Service, name string, handler Handler[TIn, TOut])`
+#### `rpc.Register[TIn, TOut](svc *Service, name string, handler Handler[TIn, TOut]) error`
 
 The simplest and most type-safe way to register methods:
 
@@ -51,7 +51,13 @@ func createUser(ctx context.Context, req *CreateUserRequest) (*CreateUserRespons
 }
 
 // Register with automatic type inference
-rpc.MustRegisterTyped(svc, "CreateUser", createUser)
+err := rpc.Register(svc, "CreateUser", createUser)
+if err != nil {
+    // handle error
+}
+
+// Or use MustRegister to panic on error (useful in main() or tests)
+rpc.MustRegister(svc, "CreateUser", createUser)
 ```
 
 ### Method Builder API
@@ -64,19 +70,32 @@ Creates a new method builder with type inference:
 method := rpc.NewMethod("CreateUser", createUser).
     Validate(true).              // Override validation setting
     WithInterceptors(authInterceptor). // Add method-specific interceptors
-    Description("Creates a new user")  // Add method description
+    WithDescription("Creates a new user")  // Add method description
 ```
 
-### Legacy Registration
+### Builder Pattern Registration
 
-For cases where you need to explicitly specify types:
+For cases where you need more control:
 
 ```go
-// Using MustRegister with multiple methods
-rpc.MustRegister(svc,
-    rpc.NewMethod("Create", createHandler).In(CreateReq{}).Out(CreateResp{}),
-    rpc.NewMethod("Get", getHandler).In(GetReq{}).Out(GetResp{}),
-    rpc.NewMethod("Update", updateHandler).In(UpdateReq{}).Out(UpdateResp{}),
+// Using MustRegisterMethod with builder pattern
+rpc.MustRegisterMethod(svc,
+    rpc.NewMethod("Create", createHandler).
+        In(CreateReq{}).
+        Out(CreateResp{}).
+        Validate(false).
+        WithDescription("Create a new resource"),
+    rpc.NewMethod("Get", getHandler).
+        In(GetReq{}).
+        Out(GetResp{}).
+        WithInterceptors(cacheInterceptor),
+)
+
+// Or with error handling
+err := rpc.RegisterMethod(svc,
+    rpc.NewMethod("Update", updateHandler).
+        In(UpdateReq{}).
+        Out(UpdateResp{}),
 )
 ```
 

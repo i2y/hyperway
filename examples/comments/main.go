@@ -98,7 +98,7 @@ func main() {
 	)
 
 	// Register methods with documentation
-	rpc.MustRegister(svc,
+	rpc.MustRegisterMethod(svc,
 		rpc.NewMethod("CreateUser", CreateUser).
 			WithDescription("CreateUser creates a new user account with the provided information. Returns an error if the email or username already exists."),
 		rpc.NewMethod("GetUser", GetUser).

@@ -94,7 +94,7 @@ func TestService_MethodRegistration(t *testing.T) {
 func TestService_HTTPHandler(t *testing.T) {
 	svc := rpc.NewService("UserService", rpc.WithPackage("user.v1"))
 
-	rpc.MustRegister(svc,
+	rpc.MustRegisterMethod(svc,
 		rpc.NewMethod("CreateUser", createUserHandler).
 			In(CreateUserRequest{}).
 			Out(CreateUserResponse{}),
@@ -146,7 +146,7 @@ func TestService_Validation(t *testing.T) {
 		rpc.WithValidation(true),
 	)
 
-	rpc.MustRegister(svc,
+	rpc.MustRegisterMethod(svc,
 		rpc.NewMethod("CreateUser", createUserHandler).
 			In(CreateUserRequest{}).
 			Out(CreateUserResponse{}),
@@ -185,7 +185,7 @@ func TestService_Validation(t *testing.T) {
 func TestService_ErrorHandling(t *testing.T) {
 	svc := rpc.NewService("UserService", rpc.WithPackage("user.v1"))
 
-	rpc.MustRegister(svc,
+	rpc.MustRegisterMethod(svc,
 		rpc.NewMethod("CreateUser", createUserHandler).
 			In(CreateUserRequest{}).
 			Out(CreateUserResponse{}),
@@ -224,7 +224,7 @@ func TestService_ErrorHandling(t *testing.T) {
 func TestService_Gateway(t *testing.T) {
 	svc := rpc.NewService("UserService", rpc.WithPackage("user.v1"))
 
-	rpc.MustRegister(svc,
+	rpc.MustRegisterMethod(svc,
 		rpc.NewMethod("CreateUser", createUserHandler).
 			In(CreateUserRequest{}).
 			Out(CreateUserResponse{}),
@@ -266,7 +266,7 @@ func TestService_Gateway(t *testing.T) {
 func TestService_ConnectProtocol(t *testing.T) {
 	svc := rpc.NewService("UserService", rpc.WithPackage("user.v1"))
 
-	rpc.MustRegister(svc,
+	rpc.MustRegisterMethod(svc,
 		rpc.NewMethod("CreateUser", createUserHandler).
 			In(CreateUserRequest{}).
 			Out(CreateUserResponse{}),
@@ -335,8 +335,8 @@ func TestTypedRegistration(t *testing.T) {
 	svc := rpc.NewService("TypedService", rpc.WithPackage("typed.v1"))
 
 	// Test typed registration
-	rpc.MustRegisterTyped(svc, "CreateUser", createUserHandler)
-	rpc.MustRegisterTyped(svc, "GetUser", getUserHandler)
+	rpc.MustRegister(svc, "CreateUser", createUserHandler)
+	rpc.MustRegister(svc, "GetUser", getUserHandler)
 
 	// Create gateway
 	gateway, err := rpc.NewGateway(svc)
@@ -371,14 +371,14 @@ func TestTypedRegistration(t *testing.T) {
 func TestService_MultipleServices(t *testing.T) {
 	// Create multiple services
 	userSvc := rpc.NewService("UserService", rpc.WithPackage("user.v1"))
-	rpc.MustRegister(userSvc,
+	rpc.MustRegisterMethod(userSvc,
 		rpc.NewMethod("CreateUser", createUserHandler).
 			In(CreateUserRequest{}).
 			Out(CreateUserResponse{}),
 	)
 
 	adminSvc := rpc.NewService("AdminService", rpc.WithPackage("admin.v1"))
-	rpc.MustRegister(adminSvc,
+	rpc.MustRegisterMethod(adminSvc,
 		rpc.NewMethod("GetUser", getUserHandler).
 			In(GetUserRequest{}).
 			Out(GetUserResponse{}),
@@ -446,7 +446,7 @@ func TestConnectTimeoutHeader(t *testing.T) {
 		}
 	}
 
-	rpc.MustRegisterTyped(svc, "Sleep", sleepHandler)
+	rpc.MustRegister(svc, "Sleep", sleepHandler)
 
 	gateway, err := rpc.NewGateway(svc)
 	if err != nil {
@@ -549,7 +549,7 @@ func TestErrorCodes(t *testing.T) {
 		}
 	}
 
-	rpc.MustRegisterTyped(svc, "TestError", errorHandler)
+	rpc.MustRegister(svc, "TestError", errorHandler)
 
 	gateway, err := rpc.NewGateway(svc)
 	if err != nil {
@@ -608,7 +608,7 @@ func TestErrorCodes(t *testing.T) {
 func BenchmarkService_JSONRequest(b *testing.B) {
 	svc := rpc.NewService("BenchService", rpc.WithPackage("bench.v1"))
 
-	rpc.MustRegister(svc,
+	rpc.MustRegisterMethod(svc,
 		rpc.NewMethod("CreateUser", createUserHandler).
 			In(CreateUserRequest{}).
 			Out(CreateUserResponse{}),

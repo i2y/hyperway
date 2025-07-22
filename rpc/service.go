@@ -617,23 +617,33 @@ func NewGateway(services ...*Service) (http.Handler, error) {
 	return gw, nil
 }
 
-// MustRegister registers multiple methods and panics on error.
-func MustRegister(svc *Service, methods ...*MethodBuilder) {
-	for _, mb := range methods {
-		svc.MustRegister(mb.Build())
-	}
-}
-
-// Register registers a typed method.
+// Register registers a typed method (recommended).
 func Register[TIn, TOut any](svc *Service, name string, handler Handler[TIn, TOut]) error {
 	method := NewMethod(name, handler)
 	return svc.Register(method.Build())
 }
 
-// MustRegisterTyped registers a typed method and panics on error.
-func MustRegisterTyped[TIn, TOut any](svc *Service, name string, handler Handler[TIn, TOut]) {
+// MustRegister registers a typed method and panics on error (recommended).
+func MustRegister[TIn, TOut any](svc *Service, name string, handler Handler[TIn, TOut]) {
 	if err := Register(svc, name, handler); err != nil {
 		panic(err)
+	}
+}
+
+// RegisterMethod registers a method using the builder pattern.
+func RegisterMethod(svc *Service, methods ...*MethodBuilder) error {
+	for _, mb := range methods {
+		if err := svc.Register(mb.Build()); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// MustRegisterMethod registers methods using the builder pattern and panics on error.
+func MustRegisterMethod(svc *Service, methods ...*MethodBuilder) {
+	for _, mb := range methods {
+		svc.MustRegister(mb.Build())
 	}
 }
 

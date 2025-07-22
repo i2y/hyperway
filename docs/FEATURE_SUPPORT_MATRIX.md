@@ -128,15 +128,20 @@ rpc.NewService("ServiceName",
 ### Method Options
 ```go
 // Type-safe registration (recommended)
-rpc.MustRegisterTyped(svc, "MethodName", handler)
+err := rpc.Register(svc, "MethodName", handler)
+if err != nil {
+    // handle error
+}
 
 // Builder pattern
-rpc.NewMethod("MethodName", handler).
-    In(RequestType{}).                         // ✅ Request type
-    Out(ResponseType{}).                       // ✅ Response type
-    Validate(true).                            // ✅ Override validation
-    WithInterceptors(authInterceptor).         // ✅ Method interceptors
-    Description("Method description")          // ✅ Documentation
+rpc.MustRegisterMethod(svc, 
+    rpc.NewMethod("MethodName", handler).
+        In(RequestType{}).                         // ✅ Request type
+        Out(ResponseType{}).                       // ✅ Response type
+        Validate(true).                            // ✅ Override validation
+        WithInterceptors(authInterceptor).         // ✅ Method interceptors
+        WithDescription("Method description")      // ✅ Documentation
+)
 ```
 
 ### Codec Options

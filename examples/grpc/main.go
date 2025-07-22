@@ -147,10 +147,18 @@ func main() {
 	)
 
 	// Register all methods
-	rpc.MustRegisterTyped(svc, "CreateUser", createUser)
-	rpc.MustRegisterTyped(svc, "GetUser", getUser)
-	rpc.MustRegisterTyped(svc, "ListUsers", listUsers)
-	rpc.MustRegisterTyped(svc, "DeleteUser", deleteUser)
+	if err := rpc.Register(svc, "CreateUser", createUser); err != nil {
+		log.Fatalf("Failed to register CreateUser: %v", err)
+	}
+	if err := rpc.Register(svc, "GetUser", getUser); err != nil {
+		log.Fatalf("Failed to register GetUser: %v", err)
+	}
+	if err := rpc.Register(svc, "ListUsers", listUsers); err != nil {
+		log.Fatalf("Failed to register ListUsers: %v", err)
+	}
+	if err := rpc.Register(svc, "DeleteUser", deleteUser); err != nil {
+		log.Fatalf("Failed to register DeleteUser: %v", err)
+	}
 
 	// Create gateway with gRPC support
 	gateway, err := rpc.NewGateway(svc)

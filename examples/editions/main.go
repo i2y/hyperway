@@ -46,7 +46,9 @@ func main() {
 	)
 
 	// Register the CreateUser method
-	rpc.MustRegisterTyped(svc, "CreateUser", CreateUser)
+	if err := rpc.Register(svc, "CreateUser", CreateUser); err != nil {
+		log.Fatalf("Failed to register CreateUser: %v", err)
+	}
 
 	// Export the proto definition to see the editions syntax
 	protoContent, err := svc.ExportProto()

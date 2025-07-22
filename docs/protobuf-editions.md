@@ -117,8 +117,8 @@ editionsSvc := rpc.NewService("UserService",
 )
 
 // Register the same method on both
-rpc.MustRegister(proto3Svc, rpc.NewMethod("CreateUser", CreateUser))
-rpc.MustRegister(editionsSvc, rpc.NewMethod("CreateUser", CreateUser))
+rpc.MustRegisterMethod(proto3Svc, rpc.NewMethod("CreateUser", CreateUser))
+rpc.MustRegisterMethod(editionsSvc, rpc.NewMethod("CreateUser", CreateUser))
 ```
 
 ## Feature Defaults

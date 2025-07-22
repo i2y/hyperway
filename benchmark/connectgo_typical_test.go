@@ -138,7 +138,7 @@ func BenchmarkHyperway_Equivalent(b *testing.B) {
 	// Hyperway setup - no .proto files needed
 	svc := rpc.NewService("EchoService", rpc.WithPackage("echo.v1"))
 
-	rpc.MustRegister(svc,
+	rpc.MustRegisterMethod(svc,
 		rpc.NewMethod("Echo", echoHandler).
 			In(EchoRequest{}).
 			Out(EchoResponse{}),

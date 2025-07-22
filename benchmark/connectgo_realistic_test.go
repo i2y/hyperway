@@ -208,7 +208,7 @@ func BenchmarkHyperway_FullFeatures(b *testing.B) {
 		rpc.WithReflection(true),
 	)
 
-	rpc.MustRegister(svc,
+	rpc.MustRegisterMethod(svc,
 		rpc.NewMethod("Echo", echoHandler).
 			In(EchoRequest{}).
 			Out(EchoResponse{}),

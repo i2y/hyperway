@@ -69,8 +69,12 @@ func main() {
 	)
 
 	// Register methods
-	rpc.MustRegisterTyped(svc, "CreateUser", createUser)
-	rpc.MustRegisterTyped(svc, "GetUser", getUser)
+	if err := rpc.Register(svc, "CreateUser", createUser); err != nil {
+		log.Fatalf("Failed to register CreateUser: %v", err)
+	}
+	if err := rpc.Register(svc, "GetUser", getUser); err != nil {
+		log.Fatalf("Failed to register GetUser: %v", err)
+	}
 
 	// Export proto files
 	if *singleFile {

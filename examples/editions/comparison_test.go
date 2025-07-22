@@ -36,7 +36,7 @@ func TestProtoComparison(t *testing.T) {
 	proto3Svc := rpc.NewService("MessageService",
 		rpc.WithPackage("test.v1"),
 	)
-	rpc.MustRegister(proto3Svc,
+	rpc.MustRegisterMethod(proto3Svc,
 		rpc.NewMethod("Send", handler),
 	)
 
@@ -45,7 +45,7 @@ func TestProtoComparison(t *testing.T) {
 		rpc.WithPackage("test.v1"),
 		rpc.WithEdition(schema.Edition2023),
 	)
-	rpc.MustRegister(editionsSvc,
+	rpc.MustRegisterMethod(editionsSvc,
 		rpc.NewMethod("Send", handler),
 	)
 
@@ -97,7 +97,7 @@ func TestFeatureComparison(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			// Register the same method on both services
-			rpc.MustRegister(tc.service,
+			rpc.MustRegisterMethod(tc.service,
 				rpc.NewMethod("Process", handler),
 			)
 

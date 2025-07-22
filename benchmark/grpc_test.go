@@ -19,7 +19,7 @@ func BenchmarkGRPC_FullLatency(b *testing.B) {
 		rpc.WithReflection(true),
 	)
 
-	rpc.MustRegister(svc,
+	rpc.MustRegisterMethod(svc,
 		rpc.NewMethod("Echo", echoHandler).
 			In(EchoRequest{}).
 			Out(EchoResponse{}),
@@ -87,7 +87,7 @@ func BenchmarkConnectRPC_FullLatency(b *testing.B) {
 		In(EchoRequest{}).
 		Out(EchoResponse{})
 
-	rpc.MustRegister(svc, echoMethod)
+	rpc.MustRegisterMethod(svc, echoMethod)
 
 	// Get the Connect handler
 	gateway, err := rpc.NewGateway(svc)
@@ -135,7 +135,7 @@ func BenchmarkConnectRPC_LargePayload(b *testing.B) {
 		rpc.WithPackage("bench.v1"),
 	)
 
-	rpc.MustRegister(svc,
+	rpc.MustRegisterMethod(svc,
 		rpc.NewMethod("Process", processHandler).
 			In(LargeRequest{}).
 			Out(LargeResponse{}),

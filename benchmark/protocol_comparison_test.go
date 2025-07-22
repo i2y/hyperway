@@ -16,7 +16,7 @@ import (
 func BenchmarkProtocol_JSON(b *testing.B) {
 	svc := rpc.NewService("BenchService", rpc.WithPackage("bench.v1"))
 
-	rpc.MustRegister(svc,
+	rpc.MustRegisterMethod(svc,
 		rpc.NewMethod("Echo", echoHandler).
 			In(EchoRequest{}).
 			Out(EchoResponse{}),
@@ -77,7 +77,7 @@ func BenchmarkProtocol_JSON(b *testing.B) {
 func BenchmarkProtocol_Connect(b *testing.B) {
 	svc := rpc.NewService("BenchService", rpc.WithPackage("bench.v1"))
 
-	rpc.MustRegister(svc,
+	rpc.MustRegisterMethod(svc,
 		rpc.NewMethod("Echo", echoHandler).
 			In(EchoRequest{}).
 			Out(EchoResponse{}),
@@ -146,7 +146,7 @@ func BenchmarkProtocol_Connect(b *testing.B) {
 func BenchmarkProtocol_GRPCWeb(b *testing.B) {
 	svc := rpc.NewService("BenchService", rpc.WithPackage("bench.v1"))
 
-	rpc.MustRegister(svc,
+	rpc.MustRegisterMethod(svc,
 		rpc.NewMethod("Echo", echoHandler).
 			In(EchoRequest{}).
 			Out(EchoResponse{}),
@@ -215,7 +215,7 @@ func BenchmarkProtocol_GRPCWeb(b *testing.B) {
 func BenchmarkProtocol_ConnectProtobuf(b *testing.B) {
 	svc := rpc.NewService("BenchService", rpc.WithPackage("bench.v1"))
 
-	rpc.MustRegister(svc,
+	rpc.MustRegisterMethod(svc,
 		rpc.NewMethod("Echo", echoHandler).
 			In(EchoRequest{}).
 			Out(EchoResponse{}),
