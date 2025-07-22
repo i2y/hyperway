@@ -6,7 +6,7 @@ require (
 	buf.build/go/hyperpb v0.1.0
 	connectrpc.com/grpcreflect v1.3.0
 	github.com/go-playground/validator/v10 v10.27.0
-	github.com/jhump/protoreflect v1.15.3
+	github.com/jhump/protoreflect v1.17.0
 	github.com/spf13/cobra v1.9.1
 	golang.org/x/net v0.42.0
 	google.golang.org/grpc v1.71.0
@@ -15,7 +15,7 @@ require (
 
 require (
 	connectrpc.com/connect v1.18.1 // indirect
-	github.com/bufbuild/protocompile v0.6.0 // indirect
+	github.com/bufbuild/protocompile v0.14.1 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/gabriel-vasile/mimetype v1.4.8 // indirect
 	github.com/go-playground/locales v0.14.1 // indirect
