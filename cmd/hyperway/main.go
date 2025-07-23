@@ -20,7 +20,7 @@ var (
 func main() {
 	rootCmd := &cobra.Command{
 		Use:   "hyperway",
-		Short: "High-performance RPC framework with dynamic proto generation",
+		Short: "RPC framework with dynamic proto generation",
 		Long: `Hyperway is a Go RPC library that eliminates the need for manual .proto files 
 by generating Protobuf schemas dynamically at runtime from Go structs.
 
@@ -32,7 +32,8 @@ It provides tools for exporting proto files, generating schemas, and managing se
 	rootCmd.AddCommand(
 		commands.NewProtoCommand(),
 		commands.NewVersionCommand(version, commit, buildDate),
-		commands.NewServeCommand(),
+		// TODO: Implement serve command
+		// commands.NewServeCommand(),
 	)
 
 	// Execute

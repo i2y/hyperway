@@ -2,7 +2,7 @@
 
 **Build gRPC/Connect services in Go without writing a single `.proto` file.**
 
-Hyperway is an RPC framework that implements the Connect-RPC and gRPC protocols while letting you define your API using Go structs. It eliminates the need for protobuf files while maintaining full wire compatibility with Connect/gRPC clients. Under the hood, it leverages [hyperpb](https://github.com/bufbuild/hyperpb-go) for optimized dynamic protobuf parsing with performance comparable to generated code.
+Hyperway is an RPC framework that implements the Connect-RPC and gRPC protocols while letting you define your API using Go structs. It eliminates the need for protobuf files while maintaining wire compatibility with standard gRPC and Connect clients for unary RPCs. Under the hood, it leverages [hyperpb](https://github.com/bufbuild/hyperpb-go) for optimized dynamic protobuf parsing with performance comparable to generated code.
 
 ## 🚀 Why Hyperway?
 
@@ -45,7 +45,7 @@ For detailed benchmarks and performance characteristics, see the [benchmark](./b
 ## ✨ Features
 
 - 🚫 **No Proto Files**: Define your API using Go structs
-- ⚡ **High Performance**: Uses hyperpb for optimized dynamic protobuf parsing
+- ⚡ **Optimized Performance**: Uses hyperpb for efficient dynamic protobuf parsing
 - 🔄 **Multi-Protocol**: Supports gRPC (Protobuf) and Connect RPC (Protobuf and JSON)
 - ✅ **Built-in Validation**: Struct tags for input validation
 - 🔍 **gRPC Reflection**: Service discovery without proto files
@@ -190,9 +190,6 @@ hyperway proto export --endpoint http://localhost:8080 --output ./proto
 
 # Export as ZIP archive
 hyperway proto export --endpoint http://localhost:8080 --format zip --output api.zip
-
-# Generate proto files from Go source code
-hyperway proto generate --source ./pkg/api --output ./proto
 ```
 
 ## 📚 Advanced Usage

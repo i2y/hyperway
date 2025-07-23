@@ -27,7 +27,8 @@ func NewProtoCommand() *cobra.Command {
 
 	cmd.AddCommand(
 		newProtoExportCommand(),
-		newProtoGenerateCommand(),
+		// TODO: Implement proto generate command
+		// newProtoGenerateCommand(),
 	)
 
 	return cmd
@@ -220,70 +221,73 @@ func exportToFiles(exporter *hyperwayproto.Exporter, fdset *descriptorpb.FileDes
 	return nil
 }
 
-// protoGenerateOptions holds options for the proto generate command.
-type protoGenerateOptions struct {
-	input           string
-	output          string
-	packages        []string
-	includeComments bool
-	sortElements    bool
-	recursive       bool
-}
-
-func newProtoGenerateCommand() *cobra.Command {
-	opts := &protoGenerateOptions{}
-
-	cmd := &cobra.Command{
-		Use:   "generate [flags]",
-		Short: "Generate proto files from Go source code",
-		Long: `Generate proto files from Go structs and interfaces.
-
-This command analyzes Go source code and generates corresponding proto files
-based on struct definitions and RPC method signatures.
-
-Examples:
-  # Generate from current directory
-  hyperway proto generate
-
-  # Generate from specific directory
-  hyperway proto generate --input ./model
-
-  # Generate for specific packages
-  hyperway proto generate --packages model,api
-
-  # Generate recursively
-  hyperway proto generate --recursive --output ./protos`,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			return runProtoGenerate(opts)
-		},
-	}
-
-	// Add flags
-	cmd.Flags().StringVarP(&opts.input, "input", "i", ".", "Input directory containing Go source files")
-	cmd.Flags().StringVarP(&opts.output, "output", "o", "./proto", "Output directory for generated proto files")
-	cmd.Flags().StringSliceVarP(&opts.packages, "packages", "p", []string{}, "Specific packages to generate (comma-separated)")
-	cmd.Flags().BoolVar(&opts.includeComments, "comments", true, "Include Go comments in proto files")
-	cmd.Flags().BoolVar(&opts.sortElements, "sort", false, "Sort proto elements alphabetically")
-	cmd.Flags().BoolVarP(&opts.recursive, "recursive", "r", false, "Process directories recursively")
-
-	return cmd
-}
-
-func runProtoGenerate(opts *protoGenerateOptions) error {
-	// TODO: Implement Go source to proto generation
-	// This would require:
-	// 1. Parsing Go source files using go/ast
-	// 2. Analyzing struct definitions
-	// 3. Converting Go types to proto types
-	// 4. Generating proto files
-
-	fmt.Println("Proto generation from Go source is not yet implemented.")
-	fmt.Println("This feature will analyze Go structs and generate corresponding proto files.")
-	fmt.Println("\nPlanned features:")
-	fmt.Println("- Convert Go structs to proto messages")
-	fmt.Println("- Convert interface methods to RPC services")
-	fmt.Println("- Handle Go tags for proto options")
-	fmt.Println("- Support for nested types and imports")
-
-	return nil
-}
+// TODO: Implement proto generate command
+// The following code is commented out until the feature is implemented.
+//
+// // protoGenerateOptions holds options for the proto generate command.
+// type protoGenerateOptions struct {
+// 	input           string
+// 	output          string
+// 	packages        []string
+// 	includeComments bool
+// 	sortElements    bool
+// 	recursive       bool
+// }
+//
+// func newProtoGenerateCommand() *cobra.Command {
+// 	opts := &protoGenerateOptions{}
+//
+// 	cmd := &cobra.Command{
+// 		Use:   "generate [flags]",
+// 		Short: "Generate proto files from Go source code",
+// 		Long: `Generate proto files from Go structs and interfaces.
+//
+// This command analyzes Go source code and generates corresponding proto files
+// based on struct definitions and RPC method signatures.
+//
+// Examples:
+//   # Generate from current directory
+//   hyperway proto generate
+//
+//   # Generate from specific directory
+//   hyperway proto generate --input ./model
+//
+//   # Generate for specific packages
+//   hyperway proto generate --packages model,api
+//
+//   # Generate recursively
+//   hyperway proto generate --recursive --output ./protos`,
+// 		RunE: func(cmd *cobra.Command, args []string) error {
+// 			return runProtoGenerate(opts)
+// 		},
+// 	}
+//
+// 	// Add flags
+// 	cmd.Flags().StringVarP(&opts.input, "input", "i", ".", "Input directory containing Go source files")
+// 	cmd.Flags().StringVarP(&opts.output, "output", "o", "./proto", "Output directory for generated proto files")
+// 	cmd.Flags().StringSliceVarP(&opts.packages, "packages", "p", []string{}, "Specific packages to generate (comma-separated)")
+// 	cmd.Flags().BoolVar(&opts.includeComments, "comments", true, "Include Go comments in proto files")
+// 	cmd.Flags().BoolVar(&opts.sortElements, "sort", false, "Sort proto elements alphabetically")
+// 	cmd.Flags().BoolVarP(&opts.recursive, "recursive", "r", false, "Process directories recursively")
+//
+// 	return cmd
+// }
+//
+// func runProtoGenerate(opts *protoGenerateOptions) error {
+// 	// TODO: Implement Go source to proto generation
+// 	// This would require:
+// 	// 1. Parsing Go source files using go/ast
+// 	// 2. Analyzing struct definitions
+// 	// 3. Converting Go types to proto types
+// 	// 4. Generating proto files
+//
+// 	fmt.Println("Proto generation from Go source is not yet implemented.")
+// 	fmt.Println("This feature will analyze Go structs and generate corresponding proto files.")
+// 	fmt.Println("\nPlanned features:")
+// 	fmt.Println("- Convert Go structs to proto messages")
+// 	fmt.Println("- Convert interface methods to RPC services")
+// 	fmt.Println("- Handle Go tags for proto options")
+// 	fmt.Println("- Support for nested types and imports")
+//
+// 	return nil
+// }

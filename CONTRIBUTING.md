@@ -53,7 +53,7 @@ By participating in this project, you agree to be respectful and constructive in
 
 ### Prerequisites
 
-- Go 1.22 or higher
+- Go 1.24 or higher
 - Make (for running Makefile commands)
 
 ### Building
@@ -119,15 +119,14 @@ hyperway/
 
 - Update README.md for user-facing changes
 - Add godoc comments for all exported types and functions
-- Update SUPPORTED_FEATURES.md for new capabilities
+- Update FEATURE_SUPPORT_MATRIX.md for new capabilities
 
 ## Release Process
 
 Releases are managed by maintainers. To request a release:
 
 1. Ensure all tests pass
-2. Update CHANGELOG.md (if present)
-3. Create an issue requesting a release
+2. Create an issue requesting a release
 
 ## Questions?
 
