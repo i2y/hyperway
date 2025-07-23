@@ -58,14 +58,15 @@ release:
   prerelease: auto
   name_template: "{{.ProjectName}} v{{.Version}}"
   
-brews:
-  - repository:
-      owner: i2y
-      name: homebrew-tap
-    name: hyperway
-    homepage: "https://github.com/i2y/hyperway"
-    description: "High-performance RPC framework with dynamic proto generation"
-    license: "MIT"
-    skip_upload: auto
-    test: |
-      system "#{bin}/hyperway", "version"
+# Homebrew formula disabled until homebrew-tap repository is created
+# brews:
+#   - repository:
+#       owner: i2y
+#       name: homebrew-tap
+#     name: hyperway
+#     homepage: "https://github.com/i2y/hyperway"
+#     description: "High-performance RPC framework with dynamic proto generation"
+#     license: "MIT"
+#     skip_upload: auto
+#     test: |
+#       system "#{bin}/hyperway", "version"
