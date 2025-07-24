@@ -603,9 +603,18 @@ func NewGateway(services ...*Service) (http.Handler, error) {
 		gatewaySvcs = append(gatewaySvcs, gatewaySvc)
 	}
 
-	// Create gateway with default options
+	// Check if any service has reflection enabled
+	enableReflection := false
+	for _, svc := range services {
+		if svc.options.EnableReflection {
+			enableReflection = true
+			break
+		}
+	}
+
+	// Create gateway with options from services
 	gw, err := gateway.New(gatewaySvcs, gateway.Options{
-		EnableReflection: true,
+		EnableReflection: enableReflection,
 		EnableOpenAPI:    true,
 		OpenAPIPath:      "/openapi.json",
 		CORSConfig:       gateway.DefaultCORSConfig(),

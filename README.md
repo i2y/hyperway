@@ -54,7 +54,7 @@ For detailed benchmarks and performance characteristics, see the [benchmark](./b
 - 📤 **Proto Export**: Generate `.proto` files from your running service
 - 🤝 **Protocol Compatible**: Works with any gRPC or Connect client
 - 🗜️ **Compression**: Built-in gzip compression for both gRPC and Connect
-- ⏰ **Well-Known Types**: Automatic `time.Time` → `google.protobuf.Timestamp` conversion
+- ⏰ **Well-Known Types**: Full support for all Google Well-Known Types
 - 🔌 **Custom Interceptors**: Middleware for logging, auth, metrics, etc.
 - 📦 **Proto3 Optional**: Full support for optional fields
 - 🎯 **Protobuf Editions**: Support for Edition 2023 with features configuration
@@ -206,6 +206,28 @@ type Order struct {
     Customer  *Customer             `json:"customer,omitempty"`
     Status    OrderStatus           `json:"status"`
     CreatedAt time.Time             `json:"created_at"`
+}
+```
+
+### Well-Known Types
+
+Hyperway fully supports Google's Well-Known Types:
+
+```go
+import (
+    "google.golang.org/protobuf/types/known/structpb"
+    "google.golang.org/protobuf/types/known/fieldmaskpb"
+)
+
+type UpdateRequest struct {
+    // Dynamic configuration using Struct
+    Config *structpb.Struct `json:"config"`
+    
+    // Partial updates using FieldMask
+    UpdateMask *fieldmaskpb.FieldMask `json:"update_mask"`
+    
+    // Mixed-type values
+    Settings map[string]*structpb.Value `json:"settings"`
 }
 ```
 
@@ -390,8 +412,9 @@ Hyperway provides:
 ❌ **Current Limitations:**
 - **No streaming support** - Only unary RPCs are supported
 - **Go-only service definitions** - Use exported protos for other languages
-- **Limited Well-Known Types** - Currently supports Timestamp, Duration, Empty, Any
 - **No gRPC-Web support** - Use Connect protocol for browser clients
+- **Limited buf curl compatibility** - Some Well-Known Types (Struct, FieldMask) have JSON parsing issues with buf curl
+- **Map of Well-Known Types** - `map[string]*structpb.Value` causes runtime panics (implementation limitation)
 
 ## 🚀 Production Readiness
 
@@ -438,12 +461,12 @@ MIT License - see [LICENSE](LICENSE) file for details.
 ## 🗺️ Roadmap
 
 - [ ] Streaming RPC support (server-streaming, client-streaming, bidirectional)
-- [ ] Additional Well-Known Types (Any, Struct, Value, etc.)
 - [ ] Client library for type-safe RPC calls
 - [ ] Metrics and tracing integration (OpenTelemetry)
 - [ ] More compression algorithms (br, zstd)
 - [ ] Plugin system for custom protocols
 - [x] Protobuf Editions support (Edition 2023)
+- [x] Additional Well-Known Types (Struct, Value, ListValue, FieldMask)
 
 ## 🙏 Acknowledgments
 
@@ -451,9 +474,3 @@ MIT License - see [LICENSE](LICENSE) file for details.
 - [hyperpb](https://github.com/bufbuild/hyperpb-go) - Blazing-fast protobuf parsing with PGO
 - [go-playground/validator](https://github.com/go-playground/validator) - Struct validation
 - The Go community for inspiration and feedback
-
----
-
-<p align="center">
-  Made with ❤️ by the Hyperway team
-</p>

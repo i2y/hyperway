@@ -1,0 +1,15 @@
+{
+  "config": {
+    "fields": {
+      "theme": {
+        "stringValue": "dark"
+      },
+      "language": {
+        "stringValue": "en"
+      }
+    }
+  },
+  "updateMask": {
+    "paths": ["theme"]
+  }
+}

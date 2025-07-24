@@ -12,7 +12,10 @@ import (
 
 	"google.golang.org/protobuf/reflect/protoreflect"
 	"google.golang.org/protobuf/types/dynamicpb"
+	"google.golang.org/protobuf/types/known/anypb"
 	"google.golang.org/protobuf/types/known/durationpb"
+	"google.golang.org/protobuf/types/known/fieldmaskpb"
+	"google.golang.org/protobuf/types/known/structpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -49,14 +52,9 @@ func protoToStructDirect(msg protoreflect.Message, target reflect.Value) error {
 	// Iterate over all fields in the proto message
 	msg.Range(func(fd protoreflect.FieldDescriptor, v protoreflect.Value) bool {
 		// Find the corresponding struct field
-		fieldName := snakeToCamel(string(fd.Name()))
-		structField := target.FieldByName(fieldName)
-		if !structField.IsValid() {
-			// Try exact match
-			structField = target.FieldByName(string(fd.Name()))
-			if !structField.IsValid() {
-				return true // Skip unknown fields
-			}
+		structField, found := findStructField(target, string(fd.Name()))
+		if !found {
+			return true // Skip unknown fields
 		}
 
 		// Set the field value
@@ -178,6 +176,41 @@ func snakeToCamel(s string) string {
 	// Cache the result
 	fieldNameCache.Store(cacheKey, camel)
 	return camel
+}
+
+// findStructField finds a struct field by proto field name
+// It tries multiple strategies:
+// 1. Look for json tag matching the proto field name
+// 2. Try CamelCase conversion
+// 3. Try exact match
+func findStructField(target reflect.Value, protoFieldName string) (reflect.Value, bool) {
+	targetType := target.Type()
+
+	// First, try to find by json tag
+	for i := 0; i < targetType.NumField(); i++ {
+		field := targetType.Field(i)
+		jsonTag := field.Tag.Get("json")
+		if jsonTag != "" {
+			// Parse json tag (handle "name,omitempty" format)
+			tagName := strings.Split(jsonTag, ",")[0]
+			if tagName == protoFieldName {
+				return target.Field(i), true
+			}
+		}
+	}
+
+	// Second, try CamelCase conversion
+	camelName := snakeToCamel(protoFieldName)
+	if field := target.FieldByName(camelName); field.IsValid() {
+		return field, true
+	}
+
+	// Third, try exact match
+	if field := target.FieldByName(protoFieldName); field.IsValid() {
+		return field, true
+	}
+
+	return reflect.Value{}, false
 }
 
 // StructToJSON converts a Go struct to JSON bytes.
@@ -357,29 +390,243 @@ func handleWellKnownProtoToStruct(field reflect.Value, msg protoreflect.Message,
 
 	switch typeName {
 	case "google.protobuf.Timestamp":
-		if field.Type() == reflect.TypeOf(time.Time{}) {
-			// Convert Timestamp message to time.Time
-			seconds := msg.Get(msg.Descriptor().Fields().ByName("seconds")).Int()
-			nanos := msg.Get(msg.Descriptor().Fields().ByName("nanos")).Int()
-			t := time.Unix(seconds, nanos).UTC()
-			field.Set(reflect.ValueOf(t))
-			return nil
-		}
+		return handleTimestampProtoToStruct(field, msg)
 	case "google.protobuf.Duration":
-		if field.Type() == reflect.TypeOf(time.Duration(0)) {
-			// Convert Duration message to time.Duration
-			seconds := msg.Get(msg.Descriptor().Fields().ByName("seconds")).Int()
-			nanos := msg.Get(msg.Descriptor().Fields().ByName("nanos")).Int()
-			d := time.Duration(seconds)*time.Second + time.Duration(nanos)*time.Nanosecond
-			field.Set(reflect.ValueOf(d))
-			return nil
-		}
+		return handleDurationProtoToStruct(field, msg)
 	case "google.protobuf.Empty":
 		// Empty message - nothing to do
 		return nil
+	case "google.protobuf.Struct":
+		return handleStructProtoToStruct(field, msg)
+	case "google.protobuf.Value":
+		return handleValueProtoToStruct(field, msg)
+	case "google.protobuf.ListValue":
+		return handleListValueProtoToStruct(field, msg)
+	case "google.protobuf.FieldMask":
+		return handleFieldMaskProtoToStruct(field, msg)
+	case "google.protobuf.Any":
+		return handleAnyProtoToStruct(field, msg)
 	}
 
 	return fmt.Errorf("not a well-known type or unsupported conversion")
+}
+
+// handleTimestampProtoToStruct converts Timestamp message to time.Time
+func handleTimestampProtoToStruct(field reflect.Value, msg protoreflect.Message) error {
+	if field.Type() == reflect.TypeOf(time.Time{}) {
+		seconds := msg.Get(msg.Descriptor().Fields().ByName("seconds")).Int()
+		nanos := msg.Get(msg.Descriptor().Fields().ByName("nanos")).Int()
+		t := time.Unix(seconds, nanos).UTC()
+		field.Set(reflect.ValueOf(t))
+		return nil
+	}
+	return fmt.Errorf("field type mismatch for Timestamp")
+}
+
+// handleDurationProtoToStruct converts Duration message to time.Duration
+func handleDurationProtoToStruct(field reflect.Value, msg protoreflect.Message) error {
+	if field.Type() == reflect.TypeOf(time.Duration(0)) {
+		seconds := msg.Get(msg.Descriptor().Fields().ByName("seconds")).Int()
+		nanos := msg.Get(msg.Descriptor().Fields().ByName("nanos")).Int()
+		d := time.Duration(seconds)*time.Second + time.Duration(nanos)*time.Nanosecond
+		field.Set(reflect.ValueOf(d))
+		return nil
+	}
+	return fmt.Errorf("field type mismatch for Duration")
+}
+
+// handleStructProtoToStruct converts Struct message to *structpb.Struct
+func handleStructProtoToStruct(field reflect.Value, msg protoreflect.Message) error {
+	if field.Type() == reflect.TypeOf(&structpb.Struct{}) {
+		structVal := &structpb.Struct{
+			Fields: make(map[string]*structpb.Value),
+		}
+
+		// Get the fields map
+		fieldsDesc := msg.Descriptor().Fields().ByName("fields")
+		if fieldsDesc != nil {
+			fieldsMap := msg.Get(fieldsDesc).Map()
+			fieldsMap.Range(func(k protoreflect.MapKey, v protoreflect.Value) bool {
+				key := k.String()
+				// Convert the value message to structpb.Value
+				if valueMsg := v.Message(); valueMsg != nil {
+					if value, err := convertToStructpbValue(valueMsg); err == nil {
+						structVal.Fields[key] = value
+					}
+				}
+				return true
+			})
+		}
+
+		field.Set(reflect.ValueOf(structVal))
+		return nil
+	}
+	return fmt.Errorf("field type mismatch for Struct")
+}
+
+// handleValueProtoToStruct converts Value message to *structpb.Value
+func handleValueProtoToStruct(field reflect.Value, msg protoreflect.Message) error {
+	if field.Type() == reflect.TypeOf(&structpb.Value{}) {
+		value, err := convertToStructpbValue(msg)
+		if err != nil {
+			return err
+		}
+		field.Set(reflect.ValueOf(value))
+		return nil
+	}
+	return fmt.Errorf("field type mismatch for Value")
+}
+
+// handleListValueProtoToStruct converts ListValue message to *structpb.ListValue
+func handleListValueProtoToStruct(field reflect.Value, msg protoreflect.Message) error {
+	if field.Type() == reflect.TypeOf(&structpb.ListValue{}) {
+		listVal := &structpb.ListValue{
+			Values: make([]*structpb.Value, 0),
+		}
+
+		// Get the values repeated field
+		valuesDesc := msg.Descriptor().Fields().ByName("values")
+		if valuesDesc != nil {
+			valuesList := msg.Get(valuesDesc).List()
+			for i := 0; i < valuesList.Len(); i++ {
+				if valueMsg := valuesList.Get(i).Message(); valueMsg != nil {
+					if value, err := convertToStructpbValue(valueMsg); err == nil {
+						listVal.Values = append(listVal.Values, value)
+					}
+				}
+			}
+		}
+
+		field.Set(reflect.ValueOf(listVal))
+		return nil
+	}
+	return fmt.Errorf("field type mismatch for ListValue")
+}
+
+// handleFieldMaskProtoToStruct converts FieldMask message to *fieldmaskpb.FieldMask
+func handleFieldMaskProtoToStruct(field reflect.Value, msg protoreflect.Message) error {
+	if field.Type() == reflect.TypeOf(&fieldmaskpb.FieldMask{}) {
+		fieldMask := &fieldmaskpb.FieldMask{
+			Paths: make([]string, 0),
+		}
+
+		// Get the paths repeated field
+		pathsDesc := msg.Descriptor().Fields().ByName("paths")
+		if pathsDesc != nil {
+			pathsList := msg.Get(pathsDesc).List()
+			for i := 0; i < pathsList.Len(); i++ {
+				fieldMask.Paths = append(fieldMask.Paths, pathsList.Get(i).String())
+			}
+		}
+
+		field.Set(reflect.ValueOf(fieldMask))
+		return nil
+	}
+	return fmt.Errorf("field type mismatch for FieldMask")
+}
+
+// handleAnyProtoToStruct converts Any message to *anypb.Any
+func handleAnyProtoToStruct(field reflect.Value, msg protoreflect.Message) error {
+	if field.Type() == reflect.TypeOf(&anypb.Any{}) {
+		anyVal := &anypb.Any{}
+
+		// Get type_url field
+		if typeURLDesc := msg.Descriptor().Fields().ByName("type_url"); typeURLDesc != nil {
+			anyVal.TypeUrl = msg.Get(typeURLDesc).String()
+		}
+
+		// Get value field
+		if valueDesc := msg.Descriptor().Fields().ByName("value"); valueDesc != nil {
+			anyVal.Value = msg.Get(valueDesc).Bytes()
+		}
+
+		field.Set(reflect.ValueOf(anyVal))
+		return nil
+	}
+	return fmt.Errorf("field type mismatch for Any")
+}
+
+// convertToStructpbValue converts a protoreflect.Message to a structpb.Value
+func convertToStructpbValue(msg protoreflect.Message) (*structpb.Value, error) {
+	desc := msg.Descriptor()
+
+	// Handle the oneof field "kind"
+	kindField := desc.Oneofs().ByName("kind")
+	if kindField == nil {
+		return nil, fmt.Errorf("message is not a google.protobuf.Value")
+	}
+
+	// Find which field is set in the oneof
+	var setField protoreflect.FieldDescriptor
+	for i := 0; i < kindField.Fields().Len(); i++ {
+		fd := kindField.Fields().Get(i)
+		if msg.Has(fd) {
+			setField = fd
+			break
+		}
+	}
+
+	if setField == nil {
+		// No field is set, return null value
+		return structpb.NewNullValue(), nil
+	}
+
+	switch setField.Name() {
+	case "null_value":
+		return structpb.NewNullValue(), nil
+	case "number_value":
+		return structpb.NewNumberValue(msg.Get(setField).Float()), nil
+	case "string_value":
+		return structpb.NewStringValue(msg.Get(setField).String()), nil
+	case "bool_value":
+		return structpb.NewBoolValue(msg.Get(setField).Bool()), nil
+	case "struct_value":
+		return convertStructValue(msg.Get(setField).Message())
+	case "list_value":
+		return convertListValue(msg.Get(setField).Message())
+	default:
+		return nil, fmt.Errorf("unknown Value kind: %s", setField.Name())
+	}
+}
+
+// convertStructValue converts a protobuf Struct message to structpb.Value
+func convertStructValue(structMsg protoreflect.Message) (*structpb.Value, error) {
+	structVal := &structpb.Struct{
+		Fields: make(map[string]*structpb.Value),
+	}
+
+	fieldsDesc := structMsg.Descriptor().Fields().ByName("fields")
+	if fieldsDesc != nil {
+		fieldsMap := structMsg.Get(fieldsDesc).Map()
+		fieldsMap.Range(func(k protoreflect.MapKey, v protoreflect.Value) bool {
+			key := k.String()
+			if valueMsg := v.Message(); valueMsg != nil {
+				if value, err := convertToStructpbValue(valueMsg); err == nil {
+					structVal.Fields[key] = value
+				}
+			}
+			return true
+		})
+	}
+	return structpb.NewStructValue(structVal), nil
+}
+
+// convertListValue converts a protobuf ListValue message to structpb.Value
+func convertListValue(listMsg protoreflect.Message) (*structpb.Value, error) {
+	values := make([]*structpb.Value, 0)
+
+	valuesDesc := listMsg.Descriptor().Fields().ByName("values")
+	if valuesDesc != nil {
+		valuesList := listMsg.Get(valuesDesc).List()
+		for i := 0; i < valuesList.Len(); i++ {
+			if valueMsg := valuesList.Get(i).Message(); valueMsg != nil {
+				if value, err := convertToStructpbValue(valueMsg); err == nil {
+					values = append(values, value)
+				}
+			}
+		}
+	}
+	return structpb.NewListValue(&structpb.ListValue{Values: values}), nil
 }
 
 // setProtoFieldWithWellKnown sets a proto field value handling well-known type conversions

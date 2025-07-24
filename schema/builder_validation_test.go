@@ -45,7 +45,7 @@ func TestBuilder_ValidationTags(t *testing.T) {
 		t.Fatal("ValidatedStruct message not found")
 	}
 
-	// Check that validation metadata is present in JsonName
+	// Check that all expected fields are present
 	expectedFields := map[string]bool{
 		"name":     false,
 		"email":    false,
@@ -54,20 +54,10 @@ func TestBuilder_ValidationTags(t *testing.T) {
 		"url":      false,
 	}
 
-	validationFound := 0
 	for _, field := range msg.Field {
 		fieldName := field.GetName()
 		if _, ok := expectedFields[fieldName]; ok {
 			expectedFields[fieldName] = true
-
-			// Check if validation metadata is present
-			if jsonName := field.GetJsonName(); jsonName != "" {
-				originalName, validation := schema.ExtractValidationFromJSONName(jsonName)
-				if validation != "" {
-					validationFound++
-					t.Logf("Field %s has validation: %s", originalName, validation)
-				}
-			}
 		}
 	}
 
@@ -78,10 +68,8 @@ func TestBuilder_ValidationTags(t *testing.T) {
 		}
 	}
 
-	// Ensure validation metadata was found
-	if validationFound == 0 {
-		t.Error("No validation metadata found in any fields")
-	}
+	// Validation is now handled at runtime via struct tags,
+	// not stored in the protobuf descriptor
 }
 
 func TestBuilder_ValidationWithComplexTypes(t *testing.T) {
@@ -124,15 +112,8 @@ func TestBuilder_ValidationWithComplexTypes(t *testing.T) {
 			messageNames[msg.GetName()] = true
 			t.Logf("Found message: %s", msg.GetName())
 
-			// Log fields with validation
-			for _, field := range msg.Field {
-				if jsonName := field.GetJsonName(); jsonName != "" {
-					originalName, validation := schema.ExtractValidationFromJSONName(jsonName)
-					if validation != "" {
-						t.Logf("  Field %s: %s", originalName, validation)
-					}
-				}
-			}
+			// Validation metadata is no longer stored in JsonName
+			// The validation is handled at runtime via struct tags
 		}
 	}
 

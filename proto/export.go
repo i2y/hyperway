@@ -13,6 +13,7 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protodesc"
 	"google.golang.org/protobuf/reflect/protoreflect"
+	"google.golang.org/protobuf/reflect/protoregistry"
 	"google.golang.org/protobuf/types/descriptorpb"
 )
 
@@ -59,6 +60,9 @@ func NewExporter(opts ExportOptions) *Exporter {
 // ExportFileDescriptorSet exports all proto files from a FileDescriptorSet.
 func (e *Exporter) ExportFileDescriptorSet(fdset *descriptorpb.FileDescriptorSet) (map[string]string, error) {
 	result := make(map[string]string)
+
+	// Add Well-Known Types to FileDescriptorSet if they are referenced but not included
+	fdset = e.addWellKnownTypes(fdset)
 
 	// Convert FileDescriptorProtos to protoreflect.FileDescriptor
 	files, err := protodesc.NewFiles(fdset)
@@ -111,6 +115,9 @@ func (e *Exporter) ExportFileDescriptorProto(fdp *descriptorpb.FileDescriptorPro
 	fdset := &descriptorpb.FileDescriptorSet{
 		File: []*descriptorpb.FileDescriptorProto{fdp},
 	}
+
+	// Add Well-Known Types to FileDescriptorSet if they are referenced but not included
+	fdset = e.addWellKnownTypes(fdset)
 
 	// Convert to protoreflect.FileDescriptor
 	files, err := protodesc.NewFiles(fdset)
@@ -379,4 +386,57 @@ func getScalarTypeName(fieldType descriptorpb.FieldDescriptorProto_Type) string 
 		return name
 	}
 	return "unknown"
+}
+
+// addWellKnownTypes adds missing Well-Known Types to the FileDescriptorSet
+func (e *Exporter) addWellKnownTypes(fdset *descriptorpb.FileDescriptorSet) *descriptorpb.FileDescriptorSet {
+	// Map of Well-Known Type import paths
+	wellKnownImports := map[string]bool{
+		"google/protobuf/timestamp.proto":  false,
+		"google/protobuf/duration.proto":   false,
+		"google/protobuf/empty.proto":      false,
+		"google/protobuf/struct.proto":     false,
+		"google/protobuf/wrappers.proto":   false,
+		"google/protobuf/field_mask.proto": false,
+		"google/protobuf/any.proto":        false,
+	}
+
+	// Check which Well-Known Types are referenced
+	for _, file := range fdset.File {
+		for _, dep := range file.Dependency {
+			if _, ok := wellKnownImports[dep]; ok {
+				wellKnownImports[dep] = true
+			}
+		}
+	}
+
+	// Check if any Well-Known Types are already included
+	existingFiles := make(map[string]bool)
+	for _, file := range fdset.File {
+		if file.Name != nil {
+			existingFiles[*file.Name] = true
+		}
+	}
+
+	// Create a new FileDescriptorSet with Well-Known Types added
+	result := &descriptorpb.FileDescriptorSet{
+		File: make([]*descriptorpb.FileDescriptorProto, 0, len(fdset.File)),
+	}
+
+	// Add Well-Known Type descriptors that are referenced but not included
+	for importPath, isReferenced := range wellKnownImports {
+		if isReferenced && !existingFiles[importPath] {
+			// Get the Well-Known Type descriptor from the global registry
+			fd, err := protoregistry.GlobalFiles.FindFileByPath(importPath)
+			if err == nil {
+				fdp := protodesc.ToFileDescriptorProto(fd)
+				result.File = append(result.File, fdp)
+			}
+		}
+	}
+
+	// Add all original files
+	result.File = append(result.File, fdset.File...)
+
+	return result
 }
