@@ -43,11 +43,8 @@ func (d *descriptorResolver) FindFileByPath(path string) (protoreflect.FileDescr
 }
 
 func (d *descriptorResolver) FindDescriptorByName(name protoreflect.FullName) (protoreflect.Descriptor, error) {
-	fmt.Printf("[DEBUG] FindDescriptorByName called with: %s\n", name)
-
 	// First try the global registry
 	if desc, err := protoregistry.GlobalFiles.FindDescriptorByName(name); err == nil {
-		fmt.Printf("[DEBUG] Found in global registry\n")
 		return desc, nil
 	}
 
@@ -58,11 +55,7 @@ func (d *descriptorResolver) FindDescriptorByName(name protoreflect.FullName) (p
 	// This ensures imports like google/protobuf/timestamp.proto are available
 	protoregistry.GlobalFiles.RangeFiles(func(fd protoreflect.FileDescriptor) bool {
 		if strings.HasPrefix(fd.Path(), "google/protobuf/") {
-			if err := files.RegisterFile(fd); err != nil {
-				fmt.Printf("[DEBUG] Failed to register well-known type %s: %v\n", fd.Path(), err)
-			} else {
-				fmt.Printf("[DEBUG] Registered well-known type: %s\n", fd.Path())
-			}
+			_ = files.RegisterFile(fd) // Ignore registration errors for well-known types
 		}
 		return true
 	})
@@ -73,63 +66,29 @@ func (d *descriptorResolver) FindDescriptorByName(name protoreflect.FullName) (p
 	// Register all files from services
 	for _, svc := range d.services {
 		if svc.Descriptors != nil {
-			fmt.Printf("[DEBUG] Service %s.%s has %d files\n", svc.Package, svc.Name, len(svc.Descriptors.File))
 			for _, file := range svc.Descriptors.File {
 				// Skip if already registered
 				if registeredFiles[file.GetName()] {
 					continue
 				}
 
-				fmt.Printf("[DEBUG] Registering file: %s (package: %s)\n", file.GetName(), file.GetPackage())
-				if len(file.Service) > 0 {
-					fmt.Printf("[DEBUG] File contains %d services:\n", len(file.Service))
-					for _, s := range file.Service {
-						fmt.Printf("[DEBUG]   - %s\n", s.GetName())
-					}
-				}
-
 				fd, err := protodesc.NewFile(file, files)
 				if err == nil {
 					if err := files.RegisterFile(fd); err != nil {
-						fmt.Printf("[DEBUG] Failed to register file: %v\n", err)
 						// Continue on error to try other files
 						continue
 					}
 					registeredFiles[file.GetName()] = true
-					fmt.Printf("[DEBUG] Successfully registered file: %s\n", file.GetName())
-				} else {
-					fmt.Printf("[DEBUG] Failed to create file descriptor: %v\n", err)
 				}
 			}
 		}
 	}
 
-	// Debug: list all registered files
-	files.RangeFiles(func(fd protoreflect.FileDescriptor) bool {
-		fmt.Printf("[DEBUG] Registered file: %s\n", fd.Path())
-		for i := 0; i < fd.Services().Len(); i++ {
-			svc := fd.Services().Get(i)
-			fmt.Printf("[DEBUG]   Service: %s\n", svc.FullName())
-		}
-		return true
-	})
-
 	// Then find the descriptor
 	desc, err := files.FindDescriptorByName(name)
 	if err != nil {
-		fmt.Printf("[DEBUG] Failed to find descriptor: %v\n", err)
-		// Let's also check what descriptors ARE available
-		files.RangeFiles(func(fd protoreflect.FileDescriptor) bool {
-			fmt.Printf("[DEBUG] Available file: %s\n", fd.Path())
-			for i := 0; i < fd.Services().Len(); i++ {
-				svc := fd.Services().Get(i)
-				fmt.Printf("[DEBUG]   Service: %s\n", svc.FullName())
-			}
-			return true
-		})
 		return nil, protoregistry.NotFound
 	}
-	fmt.Printf("[DEBUG] Found descriptor successfully\n")
 	return desc, nil
 }
 

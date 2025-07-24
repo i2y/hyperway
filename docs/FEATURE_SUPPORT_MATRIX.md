@@ -85,7 +85,15 @@
 - ✅ **Proto3 Optional** - Supported via pointer types
 - ✅ **Protobuf Editions** - Edition 2023 supported
 - ✅ **Enum Support** - Integer constants become enums
-- ✅ **Well-Known Types** - Timestamp, Duration, Empty, Any
+- ✅ **Well-Known Types** - Full support for:
+  - ✅ `google.protobuf.Timestamp` - time.Time conversion
+  - ✅ `google.protobuf.Duration` - time.Duration conversion
+  - ✅ `google.protobuf.Empty` - struct{} or proto:"empty" tag  
+  - ✅ `google.protobuf.Any` - dynamic message types (with caveats for JSON)
+  - ✅ `google.protobuf.Struct` - dynamic JSON-like structures
+  - ✅ `google.protobuf.Value` - any JSON value type
+  - ✅ `google.protobuf.ListValue` - heterogeneous lists
+  - ✅ `google.protobuf.FieldMask` - partial update support
 - ❌ **Proto2 Syntax** - Only proto3/editions supported
 - ❌ **Protobuf Extensions** - Not supported
 - ❌ **Custom Options** - Limited support

@@ -13,10 +13,6 @@ import (
 	"sync"
 	"time"
 
-	"google.golang.org/protobuf/encoding/protojson"
-	"google.golang.org/protobuf/proto"
-	"google.golang.org/protobuf/types/dynamicpb"
-
 	"github.com/i2y/hyperway/codec"
 	reflectutil "github.com/i2y/hyperway/internal/reflect"
 	"github.com/i2y/hyperway/schema"
@@ -57,6 +53,10 @@ const (
 	grpcStatusUnavailable        = 14
 	grpcStatusDataLoss           = 15
 	grpcStatusUnauthenticated    = 16
+
+	// Content type constants
+	contentTypeProto        = "application/proto"
+	contentTypeConnectProto = "application/connect+proto"
 )
 
 // grpcStatusCodeMap maps error codes to gRPC status codes.
@@ -216,9 +216,9 @@ func detectProtocol(r *http.Request) protocolInfo {
 }
 
 // handleMethodNotAllowed handles non-POST requests.
-func (s *Service) handleMethodNotAllowed(w http.ResponseWriter, p protocolInfo) {
+func (s *Service) handleMethodNotAllowed(w http.ResponseWriter, r *http.Request, p protocolInfo) {
 	if p.isConnect {
-		s.writeConnectError(w, NewError(CodeUnimplemented, "Method not allowed"))
+		s.writeConnectError(w, r, NewError(CodeUnimplemented, "Method not allowed"))
 	} else if p.isGRPC {
 		w.Header().Set("grpc-status", fmt.Sprintf("%d", grpcStatusUnimplemented))
 		w.Header().Set("grpc-message", "Method not allowed")
@@ -253,7 +253,7 @@ func (s *Service) handleRequest(w http.ResponseWriter, r *http.Request, ctx *han
 
 	// Only accept POST
 	if r.Method != http.MethodPost {
-		s.handleMethodNotAllowed(w, proto)
+		s.handleMethodNotAllowed(w, r, proto)
 		return
 	}
 
@@ -360,7 +360,7 @@ func (s *Service) writeError(w http.ResponseWriter, r *http.Request, err error) 
 	}
 
 	if isConnect {
-		s.writeConnectError(w, rpcErr)
+		s.writeConnectError(w, r, rpcErr)
 	} else {
 		// Standard HTTP error
 		w.Header().Set("Content-Type", "application/json")
@@ -372,8 +372,16 @@ func (s *Service) writeError(w http.ResponseWriter, r *http.Request, err error) 
 }
 
 // writeConnectError writes a Connect protocol error response.
-func (s *Service) writeConnectError(w http.ResponseWriter, err *Error) {
-	w.Header().Set("Content-Type", "application/json")
+func (s *Service) writeConnectError(w http.ResponseWriter, r *http.Request, err *Error) {
+	// Determine response content type based on request
+	contentType := r.Header.Get("Content-Type")
+	isProto := contentType == contentTypeProto || contentType == contentTypeConnectProto
+
+	if isProto {
+		w.Header().Set("Content-Type", contentTypeProto)
+	} else {
+		w.Header().Set("Content-Type", "application/json")
+	}
 	w.WriteHeader(http.StatusOK) // Connect uses 200 with error in body
 
 	response := map[string]any{
@@ -384,6 +392,8 @@ func (s *Service) writeConnectError(w http.ResponseWriter, err *Error) {
 		response["details"] = err.Details
 	}
 
+	// For now, always encode as JSON even for proto requests
+	// TODO: Implement proper proto error encoding
 	_ = json.NewEncoder(w).Encode(response)
 }
 
@@ -401,7 +411,7 @@ func (s *Service) decodeInput(contentType string, body []byte, ctx *handlerConte
 		if err := json.Unmarshal(body, inputVal.Interface()); err != nil {
 			return reflect.Value{}, NewErrorf(CodeInvalidArgument, "failed to unmarshal JSON: %v", err)
 		}
-	case "application/protobuf", "application/x-protobuf", "application/proto", "application/connect+proto":
+	case "application/protobuf", "application/x-protobuf", contentTypeProto, contentTypeConnectProto:
 		// Decode protobuf
 		msg, err := ctx.inputCodec.Unmarshal(body)
 		if err != nil {
@@ -491,6 +501,10 @@ func (s *Service) encodeResponse(w http.ResponseWriter, r *http.Request, output 
 	// Check if client accepts compression
 	canCompress := strings.Contains(r.Header.Get("Accept-Encoding"), CompressionGzip)
 
+	// DEBUG: Log content type detection
+	// fmt.Printf("DEBUG: Request Content-Type: %s, Accept: %s, Determined: %s\n",
+	//     r.Header.Get("Content-Type"), r.Header.Get("Accept"), contentType)
+
 	// Handle different content types
 	if isProtobufContentType(contentType) {
 		return s.encodeProtobufResponse(w, output, ctx, canCompress)
@@ -516,8 +530,8 @@ func determineContentType(r *http.Request) string {
 func isProtobufContentType(contentType string) bool {
 	return contentType == "application/protobuf" ||
 		contentType == "application/x-protobuf" ||
-		contentType == "application/proto" ||
-		contentType == "application/connect+proto"
+		contentType == contentTypeProto ||
+		contentType == contentTypeConnectProto
 }
 
 // encodeProtobufResponse encodes a protobuf response
@@ -528,14 +542,15 @@ func (s *Service) encodeProtobufResponse(w http.ResponseWriter, output any, ctx 
 		return fmt.Errorf("failed to marshal to JSON: %w", err)
 	}
 
-	// Create dynamic message
-	dynMsg := dynamicpb.NewMessage(ctx.outputCodec.Descriptor())
-	if err := protojson.Unmarshal(jsonData, dynMsg); err != nil {
+	// Use hyperpb codec to create and unmarshal message
+	msg, err := ctx.outputCodec.UnmarshalFromJSON(jsonData)
+	if err != nil {
 		return fmt.Errorf("failed to unmarshal JSON to proto: %w", err)
 	}
+	defer ctx.outputCodec.ReleaseMessage(msg)
 
-	// Marshal to protobuf binary
-	data, err := proto.Marshal(dynMsg)
+	// Marshal to protobuf binary using hyperpb codec
+	data, err := ctx.outputCodec.Marshal(msg)
 	if err != nil {
 		return fmt.Errorf("failed to marshal protobuf: %w", err)
 	}
@@ -543,7 +558,7 @@ func (s *Service) encodeProtobufResponse(w http.ResponseWriter, output any, ctx 
 	// Apply compression if needed
 	data = s.maybeCompress(data, w, canCompress)
 
-	w.Header().Set("Content-Type", "application/proto")
+	w.Header().Set("Content-Type", contentTypeProto)
 	_, _ = w.Write(data)
 	return nil
 }
@@ -718,14 +733,15 @@ func (s *Service) encodeGRPCResponse(w http.ResponseWriter, r *http.Request, out
 		return fmt.Errorf("failed to marshal to JSON: %w", err)
 	}
 
-	// Create a dynamic message
-	dynMsg := dynamicpb.NewMessage(ctx.outputCodec.Descriptor())
-	if err := protojson.Unmarshal(jsonData, dynMsg); err != nil {
+	// Use hyperpb codec to create and unmarshal message
+	msg, err := ctx.outputCodec.UnmarshalFromJSON(jsonData)
+	if err != nil {
 		return fmt.Errorf("failed to unmarshal JSON to proto: %w", err)
 	}
+	defer ctx.outputCodec.ReleaseMessage(msg)
 
-	// Marshal to protobuf binary
-	data, err := proto.Marshal(dynMsg)
+	// Marshal to protobuf binary using hyperpb codec
+	data, err := ctx.outputCodec.Marshal(msg)
 	if err != nil {
 		return fmt.Errorf("failed to marshal protobuf: %w", err)
 	}

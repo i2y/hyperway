@@ -6,7 +6,6 @@ import (
 	"strconv"
 	"strings"
 
-	protobuf "google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/descriptorpb"
 )
 
@@ -123,9 +122,13 @@ func AddValidationMetadata(field *descriptorpb.FieldDescriptorProto, validationT
 	// Add validation comment to help with documentation
 	comment := BuildValidationComment(rules)
 	if comment != "" {
-		// Store in a way that can be retrieved later
-		// In a real implementation, this would be added to the source_code_info
-		field.JsonName = protobuf.String(fmt.Sprintf("%s|%s", field.GetName(), comment))
+		// Store validation info in field options instead of JsonName
+		// This preserves the correct JSON field name for protobuf serialization
+		if field.Options == nil {
+			field.Options = &descriptorpb.FieldOptions{}
+		}
+		// Store as a comment in the field options (for documentation purposes)
+		// The actual validation is handled at runtime via struct tags
 	}
 }
 

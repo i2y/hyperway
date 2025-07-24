@@ -15,6 +15,7 @@ const (
 	WellKnownValue     = ".google.protobuf.Value"
 	WellKnownStruct    = ".google.protobuf.Struct"
 	WellKnownListValue = ".google.protobuf.ListValue"
+	WellKnownFieldMask = ".google.protobuf.FieldMask"
 )
 
 // Well-known type import paths
@@ -25,6 +26,7 @@ const (
 	AnyProto       = "google/protobuf/any.proto"
 	StructProto    = "google/protobuf/struct.proto"
 	WrappersProto  = "google/protobuf/wrappers.proto"
+	FieldMaskProto = "google/protobuf/field_mask.proto"
 )
 
 // WellKnownType represents information about a well-known type
@@ -42,6 +44,29 @@ var wellKnownTypes = map[string]WellKnownType{
 	"time.Duration": {
 		TypeName:   WellKnownDuration,
 		ImportPath: DurationProto,
+	},
+	// Struct types
+	"google.golang.org/protobuf/types/known/structpb.Struct": {
+		TypeName:   WellKnownStruct,
+		ImportPath: StructProto,
+	},
+	"google.golang.org/protobuf/types/known/structpb.Value": {
+		TypeName:   WellKnownValue,
+		ImportPath: StructProto,
+	},
+	"google.golang.org/protobuf/types/known/structpb.ListValue": {
+		TypeName:   WellKnownListValue,
+		ImportPath: StructProto,
+	},
+	// FieldMask
+	"google.golang.org/protobuf/types/known/fieldmaskpb.FieldMask": {
+		TypeName:   WellKnownFieldMask,
+		ImportPath: FieldMaskProto,
+	},
+	// Any
+	"google.golang.org/protobuf/types/known/anypb.Any": {
+		TypeName:   WellKnownAny,
+		ImportPath: AnyProto,
 	},
 }
 

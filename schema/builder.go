@@ -602,6 +602,11 @@ func (b *Builder) applyFieldTags(fieldProto *descriptorpb.FieldDescriptorProto, 
 
 // getFieldType returns the protobuf type for a Go type.
 func (b *Builder) getFieldType(ft reflect.Type, fieldName string) (descriptorpb.FieldDescriptorProto_Type, string, error) {
+	// Handle pointer types
+	if ft.Kind() == reflect.Ptr {
+		ft = ft.Elem()
+	}
+
 	// Check for well-known types first
 	if wkt, ok := IsWellKnownType(ft); ok {
 		// Add import if not already added
