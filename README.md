@@ -179,6 +179,7 @@ Now you have standard `.proto` files for:
 - Cross-language support
 - API documentation
 - Schema versioning
+- Registry upload (BSR, private repos)
 
 This approach gives you rapid development with Go while maintaining full protobuf compatibility.
 
