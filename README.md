@@ -54,7 +54,7 @@ For detailed benchmarks and performance characteristics, see the [benchmark](./b
 - 📤 **Proto Export**: Generate `.proto` files from your running service
 - 🤝 **Protocol Compatible**: Works with any gRPC or Connect client
 - 🗜️ **Compression**: Built-in gzip compression for both gRPC and Connect
-- ⏰ **Well-Known Types**: Full support for all Google Well-Known Types
+- ⏰ **Well-Known Types**: Support for common Google Well-Known Types (Timestamp, Duration, Empty, Any, Struct, Value, ListValue, FieldMask)
 - 🔌 **Custom Interceptors**: Middleware for logging, auth, metrics, etc.
 - 📦 **Proto3 Optional**: Full support for optional fields
 - 🎯 **Protobuf Editions**: Support for Edition 2023 with features configuration
@@ -212,7 +212,7 @@ type Order struct {
 
 ### Well-Known Types
 
-Hyperway fully supports Google's Well-Known Types:
+Hyperway supports the most commonly used Google Well-Known Types:
 
 ```go
 import (
