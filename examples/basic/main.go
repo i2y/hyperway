@@ -78,18 +78,18 @@ func main() {
 	mux.Handle("/", gateway)
 
 	// Start server
-	log.Println("Server starting on :8090")
-	log.Println("OpenAPI spec available at http://localhost:8090/openapi.json")
+	log.Println("Server starting on :8091")
+	log.Println("OpenAPI spec available at http://localhost:8091/openapi.json")
 	log.Println("Example requests:")
-	log.Println("  Create user: curl -X POST http://localhost:8090/user.v1.UserService/CreateUser -H 'Content-Type: application/json' -d '{\"name\":\"Alice\",\"email\":\"alice@example.com\"}'")
-	log.Println("  Get user: curl -X POST http://localhost:8090/user.v1.UserService/GetUser -H 'Content-Type: application/json' -d '{\"id\":\"user-123\"}'")
+	log.Println("  Create user: curl -X POST http://localhost:8091/user.v1.UserService/CreateUser -H 'Content-Type: application/json' -d '{\"name\":\"Alice\",\"email\":\"alice@example.com\"}'")
+	log.Println("  Get user: curl -X POST http://localhost:8091/user.v1.UserService/GetUser -H 'Content-Type: application/json' -d '{\"id\":\"user-123\"}'")
 
 	// Use h2c (HTTP/2 without TLS) for gRPC reflection support
 	h2s := &http2.Server{}
 	handler := h2c.NewHandler(mux, h2s)
 
 	server := &http.Server{
-		Addr:    ":8090",
+		Addr:    ":8091",
 		Handler: handler,
 	}
 

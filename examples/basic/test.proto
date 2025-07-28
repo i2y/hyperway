@@ -1,0 +1,1 @@
+syntax = "proto3"; package test; service Test { rpc Method(Empty) returns (Empty); } message Empty {}

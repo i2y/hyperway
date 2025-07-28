@@ -37,9 +37,10 @@
 ### Protocol Support
 - ✅ **gRPC** - Full protocol support with HTTP/2 (Protobuf only)
 - ✅ **Connect Protocol** - Connect RPC protocol (Protobuf and JSON)
-- ✅ **REST/JSON** - Plain HTTP JSON endpoints
+- ✅ **gRPC-Web** - Browser-friendly protocol with binary and base64 modes
+- ✅ **REST/JSON** - Plain HTTP JSON endpoints (via Connect)
 - ✅ **Protocol Auto-Detection** - Based on headers
-- ✅ **Compression** - gzip support for both protocols
+- ✅ **Compression** - gzip support for all protocols
 
 ### Validation
 - ✅ **Input Validation** - Using go-playground/validator
@@ -99,7 +100,6 @@
 - ❌ **Custom Options** - Limited support
 
 ### Other Limitations
-- ❌ **gRPC-Web** - Requires additional proxy
 - ❌ **Message Mutation** - hyperpb messages are read-only
 - ❌ **Circular References** - Not supported in type definitions
 - ❌ **Interface Types** - Cannot use interfaces in structs

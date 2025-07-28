@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	"google.golang.org/protobuf/types/descriptorpb"
 
@@ -67,35 +68,17 @@ func New(services []*Service, opts Options) (*Gateway, error) {
 		}
 	}
 
-	// For now, create a simple mux that handles all protocols
-	// A proper implementation would use Vanguard with a type resolver
-	mux := http.NewServeMux()
-
+	// Create a custom router that handles all protocols
+	// Store handlers in a map for direct lookup
+	handlers := make(map[string]http.Handler)
 	for _, svc := range services {
 		for path, handler := range svc.Handlers {
-			mux.Handle(path, handler)
+			handlers[path] = handler
 		}
 	}
 
-	// Wrap the mux to add multi-protocol support headers
-	multiProtocolHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Add CORS headers for gRPC-Web
-		if origin := r.Header.Get("Origin"); origin != "" {
-			w.Header().Set("Access-Control-Allow-Origin", origin)
-			w.Header().Set("Access-Control-Allow-Methods", "POST, GET, OPTIONS")
-			w.Header().Set("Access-Control-Allow-Headers", "Accept, Content-Type, Content-Length, Accept-Encoding, Authorization, X-CSRF-Token, Connect-Protocol-Version, X-Grpc-Web, X-User-Agent")
-			w.Header().Set("Access-Control-Expose-Headers", "Grpc-Status, Grpc-Message, Grpc-Status-Details-Bin")
-
-			if r.Method == "OPTIONS" {
-				return
-			}
-		}
-
-		mux.ServeHTTP(w, r)
-	})
-
 	gw := &Gateway{
-		handler:    multiProtocolHandler,
+		handler:    nil, // Will be set later
 		services:   services,
 		options:    opts,
 		descriptor: fdset,
@@ -108,11 +91,63 @@ func New(services []*Service, opts Options) (*Gateway, error) {
 			return nil, fmt.Errorf("failed to create reflection handlers: %w", err)
 		}
 
-		// Register reflection handlers
+		// Register reflection handlers in our handler map
 		for path, handler := range reflectionHandlers {
-			mux.Handle(path, handler)
+			handlers[path] = handler
 		}
 	}
+
+	// Wrap the mux to add multi-protocol support headers
+	multiProtocolHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Add CORS headers for gRPC-Web (match reference server)
+		// Important: Use Add instead of Set to preserve existing headers
+		if origin := r.Header.Get("Origin"); origin != "" {
+			w.Header().Add("Access-Control-Allow-Origin", origin)
+			w.Header().Add("Access-Control-Allow-Credentials", "true")
+			w.Header().Add("Access-Control-Allow-Methods", "HEAD, GET, POST, PUT, PATCH, DELETE")
+			w.Header().Add("Access-Control-Allow-Headers", "*")
+			w.Header().Add("Access-Control-Expose-Headers", "*")
+
+			if r.Method == "OPTIONS" {
+				w.WriteHeader(http.StatusOK)
+				return
+			}
+		}
+
+		// Look up the handler directly
+		handler, found := handlers[r.URL.Path]
+		if !found {
+			// Try to find a handler by prefix (for services like reflection that handle multiple methods)
+			for path, h := range handlers {
+				if strings.HasSuffix(path, "/") && strings.HasPrefix(r.URL.Path, path) {
+					handler = h
+					found = true
+					break
+				}
+			}
+
+			if !found {
+				// No handler found - return appropriate error for the protocol
+				handleUnimplemented(w, r)
+				return
+			}
+		}
+
+		// Check if this is a gRPC-Web request and wrap the handler if needed
+		if isGRPCWeb(r) {
+			// Create a simple mux with just this handler for gRPC-Web
+			tempMux := http.NewServeMux()
+			tempMux.Handle(r.URL.Path, handler)
+			webHandler := newGRPCWebHandler(tempMux, 30*time.Second)
+			webHandler.ServeHTTP(w, r)
+			return
+		}
+
+		// Serve the request directly
+		handler.ServeHTTP(w, r)
+	})
+
+	gw.handler = multiProtocolHandler
 
 	// Generate OpenAPI if enabled
 	if opts.EnableOpenAPI {
@@ -263,4 +298,30 @@ func DefaultCORSConfig() *CORSConfig {
 		AllowCredentials: true,
 		MaxAge:           24 * 60 * 60, // 24 hours in seconds
 	}
+}
+
+// handleUnimplemented returns appropriate unimplemented error based on protocol
+func handleUnimplemented(w http.ResponseWriter, r *http.Request) {
+	contentType := r.Header.Get("Content-Type")
+
+	// Detect protocol
+	if strings.HasPrefix(contentType, "application/grpc") {
+		// gRPC protocol
+		w.Header().Set("Content-Type", contentType)
+		w.Header().Set("grpc-status", "12") // UNIMPLEMENTED
+		w.Header().Set("grpc-message", "Method not found")
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
+	if strings.Contains(contentType, "connect") || r.Header.Get("Connect-Protocol-Version") == "1" {
+		// Connect protocol
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		fmt.Fprintf(w, `{"code":"unimplemented","message":"Method not found"}`)
+		return
+	}
+
+	// Default HTTP 404
+	http.NotFound(w, r)
 }

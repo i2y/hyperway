@@ -1,0 +1,42 @@
+syntax = "proto3";
+
+package grpcweb.example.v1;
+
+option go_package = "grpc-real-comparison/gen";
+
+import "google/protobuf/timestamp.proto";
+
+service GreeterService {
+  rpc Greet(GreetRequest) returns (GreetResponse);
+  rpc Calculate(CalculateRequest) returns (CalculateResponse);
+  rpc StreamNumbers(StreamRequest) returns (stream NumberResponse);
+}
+
+message GreetRequest {
+  string name = 1;
+}
+
+message GreetResponse {
+  string message = 1;
+  google.protobuf.Timestamp timestamp = 2;
+}
+
+message CalculateRequest {
+  double a = 1;
+  double b = 2;
+  string operator = 3;
+}
+
+message CalculateResponse {
+  double result = 1;
+  string formula = 2;
+}
+
+message StreamRequest {
+  int32 count = 1;
+}
+
+message NumberResponse {
+  int32 number = 1;
+  google.protobuf.Timestamp timestamp = 2;
+}

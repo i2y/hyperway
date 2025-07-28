@@ -14,6 +14,8 @@ import (
 	"google.golang.org/protobuf/types/known/wrapperspb"
 
 	"github.com/i2y/hyperway/rpc"
+	"golang.org/x/net/http2"
+	"golang.org/x/net/http2/h2c"
 )
 
 // CompleteRequest demonstrates all Well-Known Types
@@ -132,10 +134,13 @@ func main() {
 		log.Fatal(err)
 	}
 
-	// Start server
+	// Start server with h2c for both HTTP/1.1 and HTTP/2 support
+	h2s := &http2.Server{}
+	handler := h2c.NewHandler(gateway, h2s)
+
 	log.Println("Complete Well-Known Types example server running on :8080")
 	log.Println("Test endpoints:")
 	log.Println("- POST http://localhost:8080/complete.v1.CompleteService/ProcessComplete")
 	log.Println("- POST http://localhost:8080/complete.v1.CompleteService/CreateAny")
-	log.Fatal(http.ListenAndServe(":8080", gateway))
+	log.Fatal(http.ListenAndServe(":8080", handler))
 }

@@ -1,8 +1,8 @@
 # Hyperway
 
-**Build gRPC/Connect services in Go without writing a single `.proto` file.**
+**Schema-driven RPC development, redefined for Go.**
 
-Hyperway is an RPC framework that implements the Connect-RPC and gRPC protocols while letting you define your API using Go structs. It eliminates the need for protobuf files while maintaining wire compatibility with standard gRPC and Connect clients for unary RPCs. Under the hood, it leverages [hyperpb](https://github.com/bufbuild/hyperpb-go) for optimized dynamic protobuf parsing with performance comparable to generated code.
+Hyperway bridges code-first agility with schema-first discipline. Your Go structs become the single source of truth, dynamically generating Protobuf schemas at runtime. Serve production-ready gRPC and Connect APIs while maintaining the ability to export standard .proto files to share your schema-driven API with any team, any language.
 
 ## 🚀 Why Hyperway?
 
@@ -15,45 +15,61 @@ Traditional gRPC/Connect development follows a schema-first approach:
 
 While this approach works well for many use cases, it can be cumbersome for rapid prototyping, small services, or teams that prefer working directly with Go types.
 
-### The Hyperway Approach
-Hyperway enables true schema-first development without manual `.proto` files:
-1. Define your API using Go structs
-2. Run your service
-3. Export `.proto` files automatically from the running service
-4. Share the schema with other teams from day one
+### Benefits of Traditional Proto-First Development
 
-This approach combines the benefits of schema-first development (early API contracts, cross-language support) with the convenience of working directly in Go. You can distribute `.proto` files to other teams immediately, enabling parallel development across different languages and platforms.
+The traditional approach offers important advantages:
+- **Language-neutral contracts** - `.proto` files serve as universal API documentation
+- **Mature tooling ecosystem** - Linters, breaking change detection, versioning tools
+- **Clear team boundaries** - Explicit contracts for cross-team collaboration
+- **Established workflows** - Well-understood CI/CD patterns
+
+### The Hyperway Approach
+Hyperway preserves these benefits while accelerating development:
+1. Define your API using Go structs - your types are the schema
+2. Run your service with automatic schema generation
+3. Export `.proto` files whenever needed for cross-team collaboration
+4. Use all existing proto tooling with your exported schemas
+
+This hybrid approach maintains the discipline of schema-first development while removing friction from the development cycle. Teams can work rapidly in Go while still providing standard `.proto` files for tooling, documentation, and cross-language support.
 
 ### How It Works
 Hyperway implements gRPC and Connect RPC protocols with dynamic capabilities:
 - Generates Protobuf schemas from your Go structs at runtime
 - Supports gRPC (Protobuf) and Connect RPC (both Protobuf and JSON)
 - Maintains wire compatibility with standard gRPC/Connect clients
-- Supports unary RPCs with full protocol compliance
+- Supports unary and server-streaming RPCs with full protocol compliance
 
 ## 📊 Performance
 
-Hyperway is designed with performance in mind:
+Hyperway is designed with performance in mind and offers competitive performance compared to connect-go:
 
-- Comparable performance to traditional protoc-generated code
-- Minimal overhead from dynamic schema generation
-- Optimized memory usage with object pooling
+### Benchmark Summary
+- **Unary RPCs**: Comparable or better performance across protocols
+- **Streaming RPCs**: Significantly improved performance and memory efficiency
+- **Memory Usage**: Reduced memory consumption, especially for streaming operations
+
+### Key Performance Features
+- Dynamic schema generation with caching
 - Efficient message parsing using hyperpb
+- Buffer pooling to reduce GC pressure
+- Optimized streaming with configurable flushing
 
-For detailed benchmarks and performance characteristics, see the [benchmark](./benchmark) directory.
+For detailed benchmarks and performance characteristics, see the [protocol-benchmarks](./protocol-benchmarks) directory.
 
 ## ✨ Features
 
-- 🚫 **No Proto Files**: Define your API using Go structs
-- ⚡ **Optimized Performance**: Uses hyperpb for efficient dynamic protobuf parsing
-- 🔄 **Multi-Protocol**: Supports gRPC (Protobuf) and Connect RPC (Protobuf and JSON)
-- ✅ **Built-in Validation**: Struct tags for input validation
-- 🔍 **gRPC Reflection**: Service discovery without proto files
+- 📋 **Schema-First**: Go types as your schema definition language
+- 📤 **Proto Export**: Generate standard `.proto` files from your running service
+- ⚡ **High Performance**: Uses hyperpb for efficient dynamic protobuf parsing
+- 🔄 **Multi-Protocol**: Supports gRPC (Protobuf), Connect RPC (Protobuf and JSON), and gRPC-Web
+- 🛡️ **Type-Safe**: Full Go type safety with runtime schema generation
+- 🤝 **Protocol Compatible**: Works with any gRPC, Connect, or gRPC-Web client
+- ✅ **Built-in Validation**: Struct tags for automatic input validation
+- 🔍 **gRPC Reflection**: Service discovery with dynamic schemas
 - 📚 **OpenAPI Generation**: Automatic API documentation
-- 🛡️ **Type-Safe**: Full Go type safety without code generation
-- 📤 **Proto Export**: Generate `.proto` files from your running service
-- 🤝 **Protocol Compatible**: Works with any gRPC or Connect client
-- 🗜️ **Compression**: Built-in gzip compression for both gRPC and Connect
+- 🌐 **Browser Support**: Native gRPC-Web support without proxy
+- 🗜️ **Compression**: Built-in gzip compression for all protocols
+- 🔁 **Server Streaming**: Full support for server-streaming RPCs
 - ⏰ **Well-Known Types**: Support for common Google Well-Known Types (Timestamp, Duration, Empty, Any, Struct, Value, ListValue, FieldMask)
 - 🔌 **Custom Interceptors**: Middleware for logging, auth, metrics, etc.
 - 📦 **Proto3 Optional**: Full support for optional fields
@@ -154,11 +170,11 @@ buf curl --protocol connect \
   http://localhost:8080/user.v1.UserService/CreateUser
 ```
 
-## 🔄 Best of Both Worlds: Code-First and Schema-First
+## 🔄 The Hybrid Approach: Schema-Driven Development in Go
 
-Hyperway enables a unique hybrid approach:
+Hyperway redefines schema-driven development for the Go ecosystem:
 
-### 1. Start with Code (No `.proto` files)
+### 1. Define Your Schema in Go
 ```go
 type User struct {
     ID    string `json:"id"`
@@ -166,22 +182,24 @@ type User struct {
     Email string `json:"email"`
 }
 ```
+Your Go types ARE the schema - type-safe, validated, and version-controlled with your code.
 
-### 2. Export Proto When Needed
+### 2. Runtime Schema Generation
+Hyperway automatically generates Protobuf schemas from your types at runtime, maintaining full wire compatibility with standard gRPC/Connect clients.
+
+### 3. Export Schemas for Cross-Team Collaboration
 ```bash
-# Generate .proto files from your running service
+# Generate standard .proto files from your running service
 hyperway proto export --endpoint localhost:8080 --output ./proto
 ```
 
-### 3. Share With Other Teams
-Now you have standard `.proto` files for:
-- Client SDK generation
-- Cross-language support
-- API documentation
-- Schema versioning
-- Registry upload (BSR, private repos)
+Now share your schema-driven API with any team:
+- Client SDK generation in any language
+- API documentation and contracts
+- Schema registries (BSR, private repos)
+- Standard protobuf tooling compatibility
 
-This approach gives you rapid development with Go while maintaining full protobuf compatibility.
+This hybrid approach delivers the discipline of schema-first design with the agility of Go-native development.
 
 ## 🛠️ CLI Tool
 
@@ -366,6 +384,83 @@ rpc.Register(adminSvc, "DeleteUser", deleteUser)
 gateway, _ := rpc.NewGateway(userSvc, authSvc, adminSvc)
 ```
 
+### Server Streaming
+
+```go
+package main
+
+import (
+    "context"
+    "fmt"
+    "log"
+    "net/http"
+    "time"
+    
+    "github.com/i2y/hyperway/rpc"
+)
+
+// Define request/response types
+type WatchEventsRequest struct {
+    Filter string `json:"filter" validate:"required"`
+    Limit  int32  `json:"limit,omitempty"`
+}
+
+type Event struct {
+    ID        string    `json:"id"`
+    Type      string    `json:"type"`
+    Message   string    `json:"message"`
+    Timestamp time.Time `json:"timestamp"`
+}
+
+// Service with streaming method
+type EventService struct{}
+
+func (s *EventService) WatchEvents(ctx context.Context, req *WatchEventsRequest, stream rpc.ServerStream[*Event]) error {
+    // Send events to the client
+    for i := 0; i < 10; i++ {
+        event := &Event{
+            ID:        fmt.Sprintf("event-%d", i),
+            Type:      "update",
+            Message:   fmt.Sprintf("Event %d matching filter: %s", i, req.Filter),
+            Timestamp: time.Now(),
+        }
+        
+        if err := stream.Send(event); err != nil {
+            return err
+        }
+        
+        // Simulate real-time events
+        time.Sleep(500 * time.Millisecond)
+    }
+    
+    return nil
+}
+
+func main() {
+    eventService := &EventService{}
+    
+    // Create service
+    svc := rpc.NewService("EventService",
+        rpc.WithPackage("events.v1"),
+        rpc.WithReflection(true),
+    )
+    
+    // Register server-streaming method
+    if err := rpc.RegisterServerStream(svc, "WatchEvents", eventService.WatchEvents); err != nil {
+        log.Fatal(err)
+    }
+    
+    // Create gateway and serve
+    gateway, err := rpc.NewGateway(svc)
+    if err != nil {
+        log.Fatal(err)
+    }
+    
+    log.Println("Event service with streaming running on :8080")
+    log.Fatal(http.ListenAndServe(":8080", gateway))
+}
+```
+
 ### Advanced Registration (Optional)
 
 For more control, you can use the builder pattern:
@@ -391,45 +486,91 @@ svc := rpc.NewService("MyService",
 
 ## 🏗️ Architecture
 
-Hyperway provides:
+Hyperway implements a schema-driven architecture where:
 
-- **Dynamic Schema Generation**: Converts Go types to Protobuf at runtime
-- **Efficient Message Handling**: Uses hyperpb for optimized parsing
-- **Multi-Protocol Support**: Implements both gRPC and Connect RPC protocols
-- **Extensible Design**: Custom interceptors, codecs, and compressors
-- **Type Safety**: Full Go type safety without code generation
+### Schema-First Philosophy
+- **Go Types as Schema Source**: Your structs define the contract, enforced at compile time
+- **Runtime Schema Generation**: Dynamic Protobuf generation maintains wire compatibility
+- **Single Source of Truth**: No schema duplication between `.proto` files and Go code
+
+### Technical Foundation
+- **High-Performance Parsing**: Leverages hyperpb for optimized message handling
+- **Multi-Protocol Gateway**: Unified implementation of gRPC, Connect, and gRPC-Web
+- **Extensible Middleware**: Interceptors for cross-cutting concerns
+- **Type-Safe by Design**: Compile-time type checking with runtime protocol compliance
+
+## 🔄 Hyperway vs Traditional Development
+
+### Development Workflow Comparison
+
+**Traditional Proto-First:**
+1. Edit `.proto` file
+2. Run code generation
+3. Update implementation
+4. Handle generated code inconsistencies
+
+**Hyperway:**
+1. Edit Go struct
+2. Run service
+3. (Optional) Export `.proto` when sharing
+
+### When to Export Protos
+
+Export `.proto` files when you need:
+- **Cross-language clients** - Generate SDKs for other languages
+- **API documentation** - Share contracts with external teams
+- **Breaking change detection** - Use with buf or similar tools
+- **Schema registries** - Upload to BSR or internal registries
+
+### Complementary Workflow
+
+```bash
+# Development phase: Iterate rapidly with Go types
+# Just write code, test, and refine
+
+# Collaboration phase: Export schemas for wider use
+hyperway proto export --endpoint localhost:8080 --output ./proto
+
+# Now you have both:
+# - Fast iteration for ongoing development
+# - Standard .proto files for tooling and cross-team collaboration
+```
 
 ## 📈 When to Use Hyperway
 
 ✅ **Perfect for:**
-- Rapid prototyping and development
-- Microservices that need quick iteration
-- Teams who prefer Go-first development
-- Projects where schema flexibility is important
+- Teams embracing schema-driven development with Go
+- Microservices requiring both type safety and rapid iteration
+- Projects that value schema-first principles without manual schema maintenance
 - Services that need multi-protocol support (gRPC + Connect RPC)
-- Applications using unary RPCs
-- Services that benefit from automatic validation
+- Applications using unary and server-streaming RPCs
+- Systems requiring automatic validation and type safety
+- Organizations wanting to share schemas across polyglot teams
 
 ❌ **Current Limitations:**
-- **No streaming support** - Only unary RPCs are supported
+- **Client/Bidi streaming** - Only server-streaming is currently supported
 - **Go-only service definitions** - Use exported protos for other languages
-- **No gRPC-Web support** - Use Connect protocol for browser clients
 - **Limited buf curl compatibility** - Some Well-Known Types (Struct, FieldMask) have JSON parsing issues with buf curl
 - **Map of Well-Known Types** - `map[string]*structpb.Value` causes runtime panics (implementation limitation)
+- **gRPC streaming compatibility** - gRPC streaming works but may require special handling for protoc-generated clients due to dynamic schema nature
 
-## 🚀 Production Readiness
+## 🚀 Current Status
 
-**Status: Production-Ready for Unary RPCs**
-
-Hyperway is production-ready for services using unary RPCs with the following assurances:
+Hyperway supports unary and server-streaming RPCs with:
 - ✅ Comprehensive test coverage
-- ✅ Battle-tested protocol compliance  
-- ✅ Performance optimized with benchmarks
-- ✅ Memory-efficient with pooling
-- ✅ Thread-safe implementation
-- ✅ Clean static analysis (passes all linters)
+- ✅ Performance optimizations
+- ✅ Memory-efficient implementation
+- ✅ Thread-safe design
+- ✅ Clean static analysis
+- ✅ Configurable streaming behavior
 
-For streaming RPCs, use traditional gRPC with `.proto` files until streaming support is added.
+### Tooling Integration
+- ✅ **Proto Export** - Generate standard `.proto` files from running services
+- ✅ **Full Compatibility** - Exported protos work with buf, protoc, and all standard tools
+- ✅ **Schema Registries** - Compatible with BSR and corporate registries
+- ✅ **Wire Compatibility** - Works with any gRPC/Connect client
+
+For client-streaming and bidirectional streaming RPCs, use traditional gRPC with `.proto` files until full streaming support is added.
 
 ## 🤝 Contributing
 
@@ -461,17 +602,39 @@ MIT License - see [LICENSE](LICENSE) file for details.
 
 ## 🗺️ Roadmap
 
-- [ ] Streaming RPC support (server-streaming, client-streaming, bidirectional)
-- [ ] Client library for type-safe RPC calls
+### Completed ✅
+- [x] Server-streaming RPC support
+- [x] Streaming performance optimizations
+- [x] Protobuf Editions support (Edition 2023)
+- [x] Additional Well-Known Types (Struct, Value, ListValue, FieldMask)
+- [x] Buffer pooling and concurrency optimizations
+
+### In Progress 🚧
+- [ ] Client-streaming RPC support
+- [ ] Bidirectional streaming RPC support
+
+### Planned 📋
 - [ ] Metrics and tracing integration (OpenTelemetry)
 - [ ] More compression algorithms (br, zstd)
 - [ ] Plugin system for custom protocols
-- [x] Protobuf Editions support (Edition 2023)
-- [x] Additional Well-Known Types (Struct, Value, ListValue, FieldMask)
+
+## ❓ FAQ
+
+### Q: How does this work with existing proto tooling?
+A: Hyperway generates standard Protobuf schemas. Export them as `.proto` files and use any existing tooling - buf, protoc, linters, breaking change detection, etc. Your exported schemas are fully compatible with the entire Protobuf ecosystem.
+
+### Q: Is this suitable for production use?
+A: Yes. Hyperway is designed for production workloads with comprehensive testing, performance optimizations, and memory-efficient implementation. The hybrid approach allows teams to maintain the rigor of schema-first design while improving development velocity.
+
+### Q: What about cross-language support?
+A: Export your schemas as `.proto` files and generate clients in any language. Hyperway maintains full wire compatibility with standard gRPC and Connect clients, so your services work seamlessly with clients written in any supported language.
+
+### Q: Can I migrate from traditional proto-first development?
+A: Yes. You can gradually adopt Hyperway service by service. Existing proto-based services can coexist with Hyperway services in the same system. You can even import existing `.proto` files as a starting point (feature in development).
 
 ## 🙏 Acknowledgments
 
 - [Connect-RPC](https://connectrpc.com) - Protocol specification and wire format
-- [hyperpb](https://github.com/bufbuild/hyperpb-go) - Blazing-fast protobuf parsing with PGO
+- [hyperpb](https://github.com/bufbuild/hyperpb-go) - High-performance protobuf parsing with PGO
 - [go-playground/validator](https://github.com/go-playground/validator) - Struct validation
 - The Go community for inspiration and feedback

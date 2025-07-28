@@ -11,6 +11,8 @@ import (
 	"github.com/i2y/hyperway/codec"
 	"github.com/i2y/hyperway/internal/proto"
 	"github.com/i2y/hyperway/rpc"
+	"golang.org/x/net/http2"
+	"golang.org/x/net/http2/h2c"
 )
 
 // ComplexMessage represents a complex message for PGO demonstration
@@ -64,10 +66,12 @@ func main() {
 		log.Fatal(err)
 	}
 
-	// Start server
+	// Start server with h2c for both HTTP/1.1 and HTTP/2 support
+	h2s := &http2.Server{}
+	handler := h2c.NewHandler(gateway, h2s)
 	srv := &http.Server{
 		Addr:    ":8090",
-		Handler: gateway,
+		Handler: handler,
 	}
 
 	log.Println("PGO Demo server starting on :8090")
