@@ -629,9 +629,6 @@ A: Yes. Hyperway is designed for production workloads with comprehensive testing
 ### Q: What about cross-language support?
 A: Export your schemas as `.proto` files and generate clients in any language. Hyperway maintains full wire compatibility with standard gRPC and Connect clients, so your services work seamlessly with clients written in any supported language.
 
-### Q: Can I migrate from traditional proto-first development?
-A: Yes. You can gradually adopt Hyperway service by service. Existing proto-based services can coexist with Hyperway services in the same system. You can even import existing `.proto` files as a starting point (feature in development).
-
 ## 🙏 Acknowledgments
 
 - [Connect-RPC](https://connectrpc.com) - Protocol specification and wire format
