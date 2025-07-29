@@ -4,6 +4,7 @@ package rpc
 import (
 	"context"
 	"fmt"
+	"log"
 	"net/http"
 	"reflect"
 	"sort"
@@ -11,10 +12,11 @@ import (
 	"sync"
 
 	"github.com/go-playground/validator/v10"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/descriptorpb"
 
 	"github.com/i2y/hyperway/gateway"
-	"github.com/i2y/hyperway/proto"
+	hyperproto "github.com/i2y/hyperway/proto"
 	"github.com/i2y/hyperway/schema"
 )
 
@@ -63,6 +65,11 @@ type Method struct {
 	InputType  reflect.Type
 	OutputType reflect.Type
 	Options    MethodOptions
+	StreamType StreamType // Type of streaming RPC
+
+	// Protobuf type support - these are set if the types implement proto.Message
+	ProtoInput  proto.Message // Optional: set if input type is a protobuf message
+	ProtoOutput proto.Message // Optional: set if output type is a protobuf message
 }
 
 // MethodOptions configures a method.
@@ -110,7 +117,7 @@ func NewService(name string, opts ...ServiceOption) *Service {
 		if err != nil {
 			// Log error but don't fail service creation
 			// This matches gRPC behavior - invalid service config is ignored
-			fmt.Printf("Warning: failed to parse service config: %v\n", err)
+			log.Printf("Warning: failed to parse service config: %v", err)
 		} else {
 			svc.serviceConfig = config
 		}
@@ -149,6 +156,11 @@ func NewService(name string, opts ...ServiceOption) *Service {
 
 // Register adds a method to the service.
 func (s *Service) Register(method *Method) error {
+	// If it's a streaming method, use the streaming registration
+	if method.StreamType != StreamTypeUnary {
+		return s.RegisterStreamingMethod(method)
+	}
+
 	// Validate method
 	if method.Name == "" {
 		return fmt.Errorf("method name is required")
@@ -176,16 +188,24 @@ func (s *Service) Register(method *Method) error {
 		method.OutputType = handlerType.Out(0).Elem()
 	}
 
+	// Auto-detect protobuf types
+	s.detectProtobufTypes(method)
+
 	// Build message descriptors to ensure they're cached
 	// This populates the builder's cache for use in gateway creation
-	_, err := s.builder.BuildMessage(method.InputType)
-	if err != nil {
-		return fmt.Errorf("failed to build input descriptor for %s: %w", method.Name, err)
+	// Skip if we're using protobuf types (they have their own descriptors)
+	if method.ProtoInput == nil {
+		_, err := s.builder.BuildMessage(method.InputType)
+		if err != nil {
+			return fmt.Errorf("failed to build input descriptor for %s: %w", method.Name, err)
+		}
 	}
 
-	_, err = s.builder.BuildMessage(method.OutputType)
-	if err != nil {
-		return fmt.Errorf("failed to build output descriptor for %s: %w", method.Name, err)
+	if method.ProtoOutput == nil {
+		_, err := s.builder.BuildMessage(method.OutputType)
+		if err != nil {
+			return fmt.Errorf("failed to build output descriptor for %s: %w", method.Name, err)
+		}
 	}
 
 	s.methods[method.Name] = method
@@ -217,6 +237,52 @@ func NewMethod[TIn, TOut any](name string, handler Handler[TIn, TOut]) *MethodBu
 			InputType:  inputType,
 			OutputType: outputType,
 			Options:    MethodOptions{},
+			StreamType: StreamTypeUnary,
+		},
+	}
+}
+
+// NewServerStreamMethod creates a server-streaming method.
+func NewServerStreamMethod[TIn, TOut any](name string, handler ServerStreamHandler[TIn, TOut]) *MethodBuilder {
+	var in TIn
+	var out TOut
+	return &MethodBuilder{
+		method: &Method{
+			Name:       name,
+			Handler:    handler,
+			InputType:  reflect.TypeOf(in),
+			OutputType: reflect.TypeOf(out),
+			StreamType: StreamTypeServerStream,
+		},
+	}
+}
+
+// NewClientStreamMethod creates a client-streaming method.
+func NewClientStreamMethod[TIn, TOut any](name string, handler ClientStreamHandler[TIn, TOut]) *MethodBuilder {
+	var in TIn
+	var out TOut
+	return &MethodBuilder{
+		method: &Method{
+			Name:       name,
+			Handler:    handler,
+			InputType:  reflect.TypeOf(in),
+			OutputType: reflect.TypeOf(out),
+			StreamType: StreamTypeClientStream,
+		},
+	}
+}
+
+// NewBidiStreamMethod creates a bidirectional streaming method.
+func NewBidiStreamMethod[TIn, TOut any](name string, handler BidiStreamHandler[TIn, TOut]) *MethodBuilder {
+	var in TIn
+	var out TOut
+	return &MethodBuilder{
+		method: &Method{
+			Name:       name,
+			Handler:    handler,
+			InputType:  reflect.TypeOf(in),
+			OutputType: reflect.TypeOf(out),
+			StreamType: StreamTypeBidiStream,
 		},
 	}
 }
@@ -300,7 +366,7 @@ func (s *Service) ExportProto() (string, error) {
 	}
 
 	// Use the proto exporter
-	exporter := proto.NewExporter(proto.DefaultExportOptions())
+	exporter := hyperproto.NewExporter(hyperproto.DefaultExportOptions())
 
 	// Export all files
 	files, err := exporter.ExportFileDescriptorSet(fdset)
@@ -333,7 +399,7 @@ func (s *Service) ExportAllProtos() (map[string]string, error) {
 	}
 
 	// Use the proto exporter
-	exporter := proto.NewExporter(proto.DefaultExportOptions())
+	exporter := hyperproto.NewExporter(hyperproto.DefaultExportOptions())
 
 	return exporter.ExportFileDescriptorSet(fdset)
 }
@@ -403,8 +469,8 @@ func (s *Service) buildCompleteFileDescriptorSet() *descriptorpb.FileDescriptorS
 		// Build message using the file builder
 		_, err := fileBuilder.BuildMessage(typ)
 		if err != nil {
-			// Log error but continue
-			fmt.Printf("[WARNING] Failed to build message %s: %v\n", typeName, err)
+			// Skip silently - protobuf types with oneof fields cannot be built by the schema builder
+			// This is expected for conformance test types
 			continue
 		}
 		processedTypes[typeName] = true
@@ -458,6 +524,20 @@ func (s *Service) buildCompleteFileDescriptorSet() *descriptorpb.FileDescriptorS
 			InputType:  ptr(inputTypeName),
 			OutputType: ptr(outputTypeName),
 		}
+
+		// Set streaming flags based on method type
+		switch method.StreamType {
+		case StreamTypeServerStream:
+			methodProto.ServerStreaming = ptr(true)
+		case StreamTypeClientStream:
+			methodProto.ClientStreaming = ptr(true)
+		case StreamTypeBidiStream:
+			methodProto.ClientStreaming = ptr(true)
+			methodProto.ServerStreaming = ptr(true)
+		case StreamTypeUnary:
+			// Default values (false) are already set
+		}
+
 		serviceProto.Method = append(serviceProto.Method, methodProto)
 
 		// Add method comment if available
@@ -642,8 +722,16 @@ func MustRegister[TIn, TOut any](svc *Service, name string, handler Handler[TIn,
 // RegisterMethod registers a method using the builder pattern.
 func RegisterMethod(svc *Service, methods ...*MethodBuilder) error {
 	for _, mb := range methods {
-		if err := svc.Register(mb.Build()); err != nil {
-			return err
+		method := mb.Build()
+		// Use appropriate registration based on stream type
+		if method.StreamType != StreamTypeUnary {
+			if err := svc.RegisterStreamingMethod(method); err != nil {
+				return err
+			}
+		} else {
+			if err := svc.Register(method); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
@@ -651,8 +739,51 @@ func RegisterMethod(svc *Service, methods ...*MethodBuilder) error {
 
 // MustRegisterMethod registers methods using the builder pattern and panics on error.
 func MustRegisterMethod(svc *Service, methods ...*MethodBuilder) {
-	for _, mb := range methods {
-		svc.MustRegister(mb.Build())
+	if err := RegisterMethod(svc, methods...); err != nil {
+		panic(err)
+	}
+}
+
+// RegisterServerStream registers a server-streaming method with type safety.
+func RegisterServerStream[TIn, TOut any](svc *Service, name string, handler ServerStreamHandler[TIn, TOut]) error {
+	// Create a wrapper that converts the typed handler to an untyped one
+	wrappedHandler := func(ctx context.Context, req any, stream any) error {
+		// Type assert the request
+		typedReq, ok := req.(*TIn)
+		if !ok {
+			return fmt.Errorf("invalid request type: expected *%T, got %T", (*TIn)(nil), req)
+		}
+
+		// Type assert the stream
+		typedStream, ok := stream.(ServerStream[TOut])
+		if !ok {
+			// If direct cast fails, wrap the stream
+			baseStream, ok := stream.(*serverStreamWriter)
+			if !ok {
+				return fmt.Errorf("invalid stream type: %T", stream)
+			}
+			typedStream = &typedServerStream[TOut]{baseStream}
+		}
+
+		// Call the original handler
+		return handler(ctx, typedReq, typedStream)
+	}
+
+	method := &Method{
+		Name:       name,
+		Handler:    wrappedHandler,
+		InputType:  reflect.TypeOf((*TIn)(nil)).Elem(),
+		OutputType: reflect.TypeOf((*TOut)(nil)).Elem(),
+		StreamType: StreamTypeServerStream,
+	}
+
+	return svc.RegisterStreamingMethod(method)
+}
+
+// MustRegisterServerStream registers a server-streaming method and panics on error.
+func MustRegisterServerStream[TIn, TOut any](svc *Service, name string, handler ServerStreamHandler[TIn, TOut]) {
+	if err := RegisterServerStream(svc, name, handler); err != nil {
+		panic(err)
 	}
 }
 
@@ -707,5 +838,31 @@ func WithServiceConfig(jsonConfig string) ServiceOption {
 func WithDescription(description string) ServiceOption {
 	return func(o *ServiceOptions) {
 		o.Description = description
+	}
+}
+
+// detectProtobufTypes automatically detects if the input/output types implement proto.Message
+func (s *Service) detectProtobufTypes(method *Method) {
+	// Skip if already set
+	if method.ProtoInput != nil && method.ProtoOutput != nil {
+		return
+	}
+
+	// Check input type
+	if method.InputType != nil && method.ProtoInput == nil {
+		// Create a new instance to check if it implements proto.Message
+		inputVal := reflect.New(method.InputType)
+		if msg, ok := inputVal.Interface().(proto.Message); ok {
+			method.ProtoInput = msg
+		}
+	}
+
+	// Check output type
+	if method.OutputType != nil && method.ProtoOutput == nil {
+		// Create a new instance to check if it implements proto.Message
+		outputVal := reflect.New(method.OutputType)
+		if msg, ok := outputVal.Interface().(proto.Message); ok {
+			method.ProtoOutput = msg
+		}
 	}
 }

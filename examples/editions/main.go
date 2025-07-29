@@ -8,6 +8,8 @@ import (
 	"net/http"
 
 	"github.com/i2y/hyperway/rpc"
+	"golang.org/x/net/http2"
+	"golang.org/x/net/http2/h2c"
 )
 
 // UserRequest represents a user creation request.
@@ -67,11 +69,14 @@ func main() {
 		log.Fatalf("Failed to create gateway: %v", err)
 	}
 
-	// Start server
+	// Start server with h2c for both HTTP/1.1 and HTTP/2 support
+	h2s := &http2.Server{}
+	handler := h2c.NewHandler(gateway, h2s)
+
 	fmt.Println("\nServer running on http://localhost:8080")
 	fmt.Println("Try: curl -X POST http://localhost:8080/example.user.v1.UserService/CreateUser -d '{\"name\":\"Alice\",\"email\":\"alice@example.com\",\"age\":30}'")
 
-	if err := http.ListenAndServe(":8080", gateway); err != nil {
+	if err := http.ListenAndServe(":8080", handler); err != nil {
 		log.Fatalf("Server failed: %v", err)
 	}
 }

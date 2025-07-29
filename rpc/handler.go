@@ -13,6 +13,9 @@ import (
 	"sync"
 	"time"
 
+	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/proto"
+
 	"github.com/i2y/hyperway/codec"
 	reflectutil "github.com/i2y/hyperway/internal/reflect"
 	"github.com/i2y/hyperway/schema"
@@ -23,7 +26,13 @@ type contextKey string
 
 // Context keys.
 const (
-	contextKeyCancel contextKey = "cancel"
+	contextKeyCancel  contextKey = "cancel"
+	handlerContextKey contextKey = "hyperway-handler-context"
+)
+
+// Content type constants
+const (
+	contentTypeConnectJSON = "application/connect+json"
 )
 
 // Frame header constants
@@ -57,6 +66,10 @@ const (
 	// Content type constants
 	contentTypeProto        = "application/proto"
 	contentTypeConnectProto = "application/connect+proto"
+	contentTypeJSON         = "application/json"
+	contentTypeProtobuf     = "application/protobuf"
+	contentTypeXProtobuf    = "application/x-protobuf"
+	contentTypeGRPCProto    = "application/grpc+proto"
 )
 
 // grpcStatusCodeMap maps error codes to gRPC status codes.
@@ -118,28 +131,143 @@ var (
 			return &handlerContext{}
 		},
 	}
+
+	// Pool for streaming frame buffers
+	streamFramePool = sync.Pool{
+		New: func() any {
+			// Start with 4KB buffer, can grow as needed
+			const defaultBufferSize = 4096
+			b := make([]byte, 0, defaultBufferSize)
+			return &b
+		},
+	}
 )
 
 // handlerContext holds the context for a handler.
 type handlerContext struct {
-	inputCodec   *codec.Codec
-	outputCodec  *codec.Codec
-	method       *Method
-	validator    interface{ Struct(any) error }
-	options      ServiceOptions
-	interceptors []Interceptor
-	handlerInfo  *HandlerInfo // Cached handler metadata
+	inputCodec       *codec.Codec
+	outputCodec      *codec.Codec
+	method           *Method
+	validator        interface{ Struct(any) error }
+	options          ServiceOptions
+	interceptors     []Interceptor
+	handlerInfo      *HandlerInfo // Cached handler metadata
+	responseHeaders  map[string][]string
+	responseTrailers map[string][]string
+	requestHeaders   map[string][]string                     // Added to capture request headers
+	useProtoInput    bool                                    // Whether to use proto.Message for input
+	useProtoOutput   bool                                    // Whether to use proto.Message for output
+	handlerFunc      func(context.Context, any) (any, error) // Cached type-erased handler
+	newInputFunc     func() reflect.Value                    // Cached function to create new input instance
+}
+
+// SetResponseHeader sets a response header.
+func (h *handlerContext) SetResponseHeader(key, value string) {
+	if h.responseHeaders == nil {
+		h.responseHeaders = make(map[string][]string)
+	}
+	h.responseHeaders[key] = append(h.responseHeaders[key], value)
+}
+
+// SetResponseTrailer sets a response trailer.
+func (h *handlerContext) SetResponseTrailer(key, value string) {
+	if h.responseTrailers == nil {
+		h.responseTrailers = make(map[string][]string)
+	}
+	h.responseTrailers[key] = append(h.responseTrailers[key], value)
+}
+
+// GetHandlerContext retrieves the handler context from a context.Context
+func GetHandlerContext(ctx context.Context) *handlerContext {
+	if hctx, ok := ctx.Value(handlerContextKey).(*handlerContext); ok {
+		return hctx
+	}
+	return nil
+}
+
+// GetRequestHeader gets a request header value.
+func (h *handlerContext) GetRequestHeader(key string) []string {
+	if h.requestHeaders == nil {
+		return nil
+	}
+	return h.requestHeaders[key]
+}
+
+// GetRequestHeaders gets all request headers.
+func (h *handlerContext) GetRequestHeaders() map[string][]string {
+	return h.requestHeaders
 }
 
 // createHTTPHandler creates an HTTP handler for a method.
 func (s *Service) createHTTPHandler(method *Method) http.HandlerFunc {
-	ctx, err := s.prepareHandlerContext(method)
-	if err != nil {
-		return errorHandler(err)
+	// For streaming methods, create a streaming handler
+	if method.StreamType != StreamTypeUnary {
+		return s.createStreamingHTTPHandler(method)
 	}
+
+	// Prepare handler context once during initialization
+	// This caches codec creation and type checking
+	cachedCtx, err := s.prepareHandlerContext(method)
+	if err != nil {
+		// Return error handler
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			s.writeError(w, r, err)
+		})
+	}
+
+	// Cache the prepared context in the service
+	s.handlerCtxCache[method.Name] = cachedCtx
 
 	// Create a handler that supports Connect protocol
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Get context from pool
+		ctx := handlerContextPool.Get().(*handlerContext)
+
+		// Copy cached values instead of recomputing
+		ctx.inputCodec = cachedCtx.inputCodec
+		ctx.outputCodec = cachedCtx.outputCodec
+		ctx.method = cachedCtx.method
+		ctx.validator = cachedCtx.validator
+		ctx.options = cachedCtx.options
+		ctx.handlerInfo = cachedCtx.handlerInfo
+		ctx.useProtoInput = cachedCtx.useProtoInput
+		ctx.useProtoOutput = cachedCtx.useProtoOutput
+		ctx.handlerFunc = cachedCtx.handlerFunc
+		ctx.newInputFunc = cachedCtx.newInputFunc
+
+		// Initialize mutable fields
+		if ctx.responseHeaders == nil {
+			ctx.responseHeaders = make(map[string][]string)
+		} else {
+			clear(ctx.responseHeaders)
+		}
+		if ctx.responseTrailers == nil {
+			ctx.responseTrailers = make(map[string][]string)
+		} else {
+			clear(ctx.responseTrailers)
+		}
+		// Request headers will be set during request processing
+		ctx.requestHeaders = nil
+
+		// Copy interceptors
+		ctx.interceptors = ctx.interceptors[:0]
+		ctx.interceptors = append(ctx.interceptors, cachedCtx.interceptors...)
+
+		// Return context to pool when done
+		defer func() {
+			// Clear the context before returning to pool
+			// Don't set to nil - just clear the maps
+			if ctx.responseHeaders != nil {
+				clear(ctx.responseHeaders)
+			}
+			if ctx.responseTrailers != nil {
+				clear(ctx.responseTrailers)
+			}
+			// requestHeaders is just a reference, so set to nil
+			ctx.requestHeaders = nil
+			handlerContextPool.Put(ctx)
+		}()
+
 		s.handleRequest(w, r, ctx)
 	})
 
@@ -150,32 +278,70 @@ func (s *Service) createHTTPHandler(method *Method) http.HandlerFunc {
 
 // prepareHandlerContext prepares the handler context.
 func (s *Service) prepareHandlerContext(method *Method) (*handlerContext, error) {
-	// Get cached handler info
-	handlerInfo, err := GetHandlerInfo(method.Handler)
-	if err != nil {
-		return nil, err
-	}
+	var inputCodec, outputCodec *codec.Codec
+	var handlerInfo *HandlerInfo
 
-	// Build message descriptors (cached in builder)
-	inputDesc, err := s.builder.BuildMessage(handlerInfo.InputType)
-	if err != nil {
-		return nil, fmt.Errorf("failed to build input descriptor: %w", err)
-	}
+	// For streaming methods, we need different handling
+	if method.StreamType != StreamTypeUnary {
+		// Streaming methods have InputType and OutputType set by the builder
+		// We don't need handler info for streaming
 
-	outputDesc, err := s.builder.BuildMessage(handlerInfo.OutputType)
-	if err != nil {
-		return nil, fmt.Errorf("failed to build output descriptor: %w", err)
-	}
+		// Only create codecs if we're not using protobuf types
+		if method.ProtoInput == nil || method.ProtoOutput == nil {
+			// Build message descriptors (cached in builder)
+			inputDesc, err := s.builder.BuildMessage(method.InputType)
+			if err != nil {
+				return nil, fmt.Errorf("failed to build input descriptor: %w", err)
+			}
 
-	// Create codecs
-	inputCodec, err := codec.New(inputDesc, codec.DefaultOptions())
-	if err != nil {
-		return nil, fmt.Errorf("failed to create input codec: %w", err)
-	}
+			outputDesc, err := s.builder.BuildMessage(method.OutputType)
+			if err != nil {
+				return nil, fmt.Errorf("failed to build output descriptor: %w", err)
+			}
 
-	outputCodec, err := codec.New(outputDesc, codec.DefaultOptions())
-	if err != nil {
-		return nil, fmt.Errorf("failed to create output codec: %w", err)
+			// Create codecs
+			inputCodec, err = codec.New(inputDesc, codec.DefaultOptions())
+			if err != nil {
+				return nil, fmt.Errorf("failed to create input codec: %w", err)
+			}
+
+			outputCodec, err = codec.New(outputDesc, codec.DefaultOptions())
+			if err != nil {
+				return nil, fmt.Errorf("failed to create output codec: %w", err)
+			}
+		}
+	} else {
+		// Unary method - use handler info
+		var err error
+		handlerInfo, err = GetHandlerInfo(method.Handler)
+		if err != nil {
+			return nil, err
+		}
+
+		// Only create codecs if we're not using protobuf types
+		if method.ProtoInput == nil || method.ProtoOutput == nil {
+			// Build message descriptors (cached in builder)
+			inputDesc, err := s.builder.BuildMessage(handlerInfo.InputType)
+			if err != nil {
+				return nil, fmt.Errorf("failed to build input descriptor: %w", err)
+			}
+
+			outputDesc, err := s.builder.BuildMessage(handlerInfo.OutputType)
+			if err != nil {
+				return nil, fmt.Errorf("failed to build output descriptor: %w", err)
+			}
+
+			// Create codecs
+			inputCodec, err = codec.New(inputDesc, codec.DefaultOptions())
+			if err != nil {
+				return nil, fmt.Errorf("failed to create input codec: %w", err)
+			}
+
+			outputCodec, err = codec.New(outputDesc, codec.DefaultOptions())
+			if err != nil {
+				return nil, fmt.Errorf("failed to create output codec: %w", err)
+			}
+		}
 	}
 
 	// Get context from pool
@@ -188,6 +354,25 @@ func (s *Service) prepareHandlerContext(method *Method) (*handlerContext, error)
 	ctx.validator = s.validator
 	ctx.options = s.options
 	ctx.handlerInfo = handlerInfo
+	ctx.useProtoInput = method.ProtoInput != nil
+	ctx.useProtoOutput = method.ProtoOutput != nil
+
+	// Clear headers and trailers
+	if ctx.responseHeaders == nil {
+		ctx.responseHeaders = make(map[string][]string)
+	} else {
+		clear(ctx.responseHeaders)
+	}
+	if ctx.responseTrailers == nil {
+		ctx.responseTrailers = make(map[string][]string)
+	} else {
+		clear(ctx.responseTrailers)
+	}
+	if ctx.requestHeaders == nil {
+		ctx.requestHeaders = make(map[string][]string)
+	} else {
+		clear(ctx.requestHeaders)
+	}
 
 	// Clear and rebuild interceptors slice
 	ctx.interceptors = ctx.interceptors[:0]
@@ -196,23 +381,99 @@ func (s *Service) prepareHandlerContext(method *Method) (*handlerContext, error)
 	// Add service-level interceptors
 	ctx.interceptors = append(ctx.interceptors, s.options.Interceptors...)
 
+	// Create type-erased handler function to avoid reflection on each call
+	if method.StreamType == StreamTypeUnary && handlerInfo != nil {
+		ctx.handlerFunc = func(reqCtx context.Context, req any) (any, error) {
+			// Use cached handler value for better performance
+			results := handlerInfo.HandlerValue.Call([]reflect.Value{
+				reflect.ValueOf(reqCtx),
+				reflect.ValueOf(req),
+			})
+
+			// Check error
+			if !results[1].IsNil() {
+				return nil, results[1].Interface().(error)
+			}
+
+			return results[0].Interface(), nil
+		}
+	} else {
+		// For streaming methods, we don't use handlerFunc
+		ctx.handlerFunc = nil
+	}
+
+	// Create cached input instance creator
+	inputType := method.InputType
+	if inputType != nil {
+		ctx.newInputFunc = func() reflect.Value {
+			return reflect.New(inputType)
+		}
+	} else {
+		// For cases where InputType might not be set yet
+		ctx.newInputFunc = func() reflect.Value {
+			if method.InputType != nil {
+				return reflect.New(method.InputType)
+			}
+			// This should not happen
+			panic("InputType not set for method")
+		}
+	}
+
 	return ctx, nil
 }
 
 // protocolInfo contains information about the request protocol.
 type protocolInfo struct {
-	isConnect bool
-	isGRPC    bool
+	isConnect  bool
+	isGRPC     bool
+	isGRPCWeb  bool
+	wantsJSON  bool
+	wantsProto bool
 }
 
 // detectProtocol detects the protocol type from the request.
 func detectProtocol(r *http.Request) protocolInfo {
 	contentType := r.Header.Get("Content-Type")
 	connectProtocol := r.Header.Get("Connect-Protocol-Version")
-	return protocolInfo{
+	grpcWeb := r.Header.Get("X-Grpc-Web") == "1" || r.Header.Get("grpc-web") == "1"
+
+	info := protocolInfo{
 		isConnect: connectProtocol == "1",
-		isGRPC:    strings.HasPrefix(contentType, "application/grpc"),
+		isGRPC:    strings.HasPrefix(contentType, "application/grpc") && !strings.Contains(contentType, "grpc-web"),
+		isGRPCWeb: grpcWeb || strings.Contains(contentType, "grpc-web"),
 	}
+
+	// For gRPC, check if it's specifically gRPC (not gRPC-Web)
+	if info.isGRPC && (grpcWeb || strings.Contains(contentType, "grpc-web")) {
+		info.isGRPC = false
+		info.isGRPCWeb = true
+	}
+
+	// Determine codec preference
+	if strings.Contains(contentType, "+json") || strings.Contains(contentType, "/json") {
+		info.wantsJSON = true
+	} else if strings.Contains(contentType, "+proto") || strings.Contains(contentType, "protobuf") || info.isGRPC {
+		info.wantsProto = true
+	}
+
+	// Check Accept header as well
+	accept := r.Header.Get("Accept")
+	if accept != "" && accept != "*/*" {
+		if strings.Contains(accept, "+json") || strings.Contains(accept, "/json") {
+			info.wantsJSON = true
+			info.wantsProto = false
+		} else if strings.Contains(accept, "+proto") || strings.Contains(accept, "protobuf") {
+			info.wantsProto = true
+			info.wantsJSON = false
+		}
+	}
+
+	// Default to proto for gRPC
+	if info.isGRPC && !info.wantsJSON {
+		info.wantsProto = true
+	}
+
+	return info
 }
 
 // handleMethodNotAllowed handles non-POST requests.
@@ -248,12 +509,32 @@ func parseRequestTimeout(r *http.Request, isConnect bool) context.Context {
 
 // handleRequest handles an HTTP request.
 func (s *Service) handleRequest(w http.ResponseWriter, r *http.Request, ctx *handlerContext) {
+	// Capture request headers - only copy what we need
+	// Instead of copying all headers, just store a reference for lazy access
+	ctx.requestHeaders = r.Header
+
 	// Detect protocol
 	proto := detectProtocol(r)
 
 	// Only accept POST
 	if r.Method != http.MethodPost {
 		s.handleMethodNotAllowed(w, r, proto)
+		return
+	}
+
+	// Check if this is a streaming method
+	if ctx.method.StreamType != StreamTypeUnary {
+		switch ctx.method.StreamType {
+		case StreamTypeServerStream:
+			s.handleServerStreamRequest(w, r, ctx, proto)
+		case StreamTypeClientStream:
+			s.handleClientStreamRequest(w, r, ctx, proto)
+		case StreamTypeBidiStream:
+			s.handleBidiStreamRequest(w, r, ctx, proto)
+		case StreamTypeUnary:
+			// This should not happen due to the if condition above
+			panic("unreachable: unary stream type in streaming handler")
+		}
 		return
 	}
 
@@ -326,15 +607,6 @@ func (s *Service) handleRequest(w http.ResponseWriter, r *http.Request, ctx *han
 	}
 }
 
-// errorHandler returns a handler that always returns an error.
-func errorHandler(err error) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		// Create a dummy service to use writeError
-		s := &Service{}
-		s.writeError(w, r, err)
-	}
-}
-
 // writeError writes an error response.
 func (s *Service) writeError(w http.ResponseWriter, r *http.Request, err error) {
 	// Check if this is a Connect protocol request
@@ -343,9 +615,19 @@ func (s *Service) writeError(w http.ResponseWriter, r *http.Request, err error) 
 
 	// Convert error to our Error type if needed
 	var rpcErr *Error
-	if e, ok := err.(*Error); ok {
+
+	// Check error type
+	switch e := err.(type) {
+	case *ErrorWithDetails:
+		// Get the protocol from the request
+		protocol := "connect" // Default
+		if strings.Contains(r.Header.Get("Content-Type"), "grpc") {
+			protocol = "grpc"
+		}
+		rpcErr = e.ToError(protocol)
+	case *Error:
 		rpcErr = e
-	} else {
+	default:
 		// Map specific error types to appropriate codes
 		switch {
 		case err == context.DeadlineExceeded:
@@ -382,18 +664,24 @@ func (s *Service) writeConnectError(w http.ResponseWriter, r *http.Request, err 
 	} else {
 		w.Header().Set("Content-Type", "application/json")
 	}
-	w.WriteHeader(http.StatusOK) // Connect uses 200 with error in body
+	// Connect protocol always uses HTTP 200 for errors
+	w.WriteHeader(http.StatusOK)
 
 	response := map[string]any{
 		"code":    string(err.Code),
 		"message": err.Message,
 	}
 	if err.Details != nil {
-		response["details"] = err.Details
+		// Check if details contains the formatted details
+		if details, ok := err.Details["details"]; ok {
+			response["details"] = details
+		} else {
+			// Legacy format - wrap in array
+			response["details"] = []any{err.Details}
+		}
 	}
 
 	// For now, always encode as JSON even for proto requests
-	// TODO: Implement proper proto error encoding
 	_ = json.NewEncoder(w).Encode(response)
 }
 
@@ -402,17 +690,65 @@ type HandlerFunc func(context.Context, any) (any, error)
 
 // decodeInput decodes the input based on content type.
 func (s *Service) decodeInput(contentType string, body []byte, ctx *handlerContext) (reflect.Value, error) {
-	// Create input instance
-	inputVal := reflect.New(ctx.method.InputType)
+	// If we have a protobuf type, use it directly
+	if ctx.useProtoInput && ctx.method.ProtoInput != nil {
+		// Clone the proto message to get a fresh instance
+		msg := proto.Clone(ctx.method.ProtoInput)
+
+		// Decode based on content type
+		switch contentType {
+		case contentTypeJSON, contentTypeConnectJSON:
+			// Use protojson for proper protobuf JSON handling
+			// Use DiscardUnknown option to ignore unknown fields
+			unmarshaler := protojson.UnmarshalOptions{
+				DiscardUnknown: true,
+			}
+			if err := unmarshaler.Unmarshal(body, msg); err != nil {
+				return reflect.Value{}, NewErrorf(CodeInvalidArgument, "failed to unmarshal JSON: %v", err)
+			}
+		case contentTypeProtobuf, contentTypeXProtobuf, contentTypeProto, contentTypeConnectProto, contentTypeGRPCProto:
+			// Direct protobuf unmarshal
+			if err := proto.Unmarshal(body, msg); err != nil {
+				return reflect.Value{}, NewErrorf(CodeInvalidArgument, "failed to unmarshal protobuf: %v", err)
+			}
+		default:
+			// For gRPC, default to protobuf
+			if strings.HasPrefix(contentType, "application/grpc") {
+				if err := proto.Unmarshal(body, msg); err != nil {
+					return reflect.Value{}, NewErrorf(CodeInvalidArgument, "failed to unmarshal protobuf: %v", err)
+				}
+			} else {
+				// Default to JSON
+				unmarshaler := protojson.UnmarshalOptions{
+					DiscardUnknown: true,
+				}
+				if err := unmarshaler.Unmarshal(body, msg); err != nil {
+					return reflect.Value{}, NewErrorf(CodeInvalidArgument, "failed to unmarshal: %v", err)
+				}
+			}
+		}
+
+		return reflect.ValueOf(msg), nil
+	}
+
+	// Original logic for non-protobuf types
+	// Create input instance using cached function
+	if ctx.newInputFunc == nil {
+		return reflect.Value{}, NewError(CodeInternal, "newInputFunc not initialized")
+	}
+	inputVal := ctx.newInputFunc()
 
 	// Decode based on content type
 	switch contentType {
-	case "application/json", "application/connect+json":
+	case "application/json", contentTypeConnectJSON:
 		if err := json.Unmarshal(body, inputVal.Interface()); err != nil {
 			return reflect.Value{}, NewErrorf(CodeInvalidArgument, "failed to unmarshal JSON: %v", err)
 		}
-	case "application/protobuf", "application/x-protobuf", contentTypeProto, contentTypeConnectProto:
+	case "application/protobuf", "application/x-protobuf", contentTypeProto, contentTypeConnectProto, contentTypeGRPCProto:
 		// Decode protobuf
+		if ctx.inputCodec == nil {
+			return reflect.Value{}, NewError(CodeInternal, "inputCodec not initialized")
+		}
 		msg, err := ctx.inputCodec.Unmarshal(body)
 		if err != nil {
 			return reflect.Value{}, NewErrorf(CodeInvalidArgument, "failed to unmarshal protobuf: %v", err)
@@ -424,9 +760,27 @@ func (s *Service) decodeInput(contentType string, body []byte, ctx *handlerConte
 			return reflect.Value{}, NewErrorf(CodeInvalidArgument, "failed to convert proto to struct: %v", err)
 		}
 	default:
-		// Default to JSON
-		if err := json.Unmarshal(body, inputVal.Interface()); err != nil {
-			return reflect.Value{}, NewErrorf(CodeInvalidArgument, "failed to unmarshal: %v", err)
+		// For gRPC, default to protobuf
+		if strings.HasPrefix(contentType, "application/grpc") {
+			// Decode protobuf
+			if ctx.inputCodec == nil {
+				return reflect.Value{}, NewError(CodeInternal, "inputCodec not initialized")
+			}
+			msg, err := ctx.inputCodec.Unmarshal(body)
+			if err != nil {
+				return reflect.Value{}, NewErrorf(CodeInvalidArgument, "failed to unmarshal protobuf: %v", err)
+			}
+			defer ctx.inputCodec.ReleaseMessage(msg)
+
+			// Convert to struct
+			if err := reflectutil.ProtoToStruct(msg.ProtoReflect(), inputVal.Interface()); err != nil {
+				return reflect.Value{}, NewErrorf(CodeInvalidArgument, "failed to convert proto to struct: %v", err)
+			}
+		} else {
+			// Default to JSON
+			if err := json.Unmarshal(body, inputVal.Interface()); err != nil {
+				return reflect.Value{}, NewErrorf(CodeInvalidArgument, "failed to unmarshal: %v", err)
+			}
 		}
 	}
 
@@ -455,21 +809,11 @@ func (s *Service) validateInput(inputVal reflect.Value, ctx *handlerContext) err
 
 // callHandler calls the handler function.
 func (s *Service) callHandler(ctx context.Context, inputVal reflect.Value, hctx *handlerContext) (any, error) {
-	// Create the base handler function using cached handler info
-	baseHandler := func(ctx context.Context, req any) (any, error) {
-		// Use cached handler value for better performance
-		results := hctx.handlerInfo.HandlerValue.Call([]reflect.Value{
-			reflect.ValueOf(ctx),
-			reflect.ValueOf(req),
-		})
+	// Add handler context to the context
+	ctx = context.WithValue(ctx, handlerContextKey, hctx)
 
-		// Check error
-		if !results[1].IsNil() {
-			return nil, results[1].Interface().(error)
-		}
-
-		return results[0].Interface(), nil
-	}
+	// Use cached handler function to avoid reflection
+	baseHandler := hctx.handlerFunc
 
 	// Apply interceptors if any
 	if len(hctx.interceptors) > 0 {
@@ -501,29 +845,101 @@ func (s *Service) encodeResponse(w http.ResponseWriter, r *http.Request, output 
 	// Check if client accepts compression
 	canCompress := strings.Contains(r.Header.Get("Accept-Encoding"), CompressionGzip)
 
-	// DEBUG: Log content type detection
-	// fmt.Printf("DEBUG: Request Content-Type: %s, Accept: %s, Determined: %s\n",
-	//     r.Header.Get("Content-Type"), r.Header.Get("Accept"), contentType)
+	// Set the content-type header first
+	w.Header().Set("Content-Type", contentType)
 
-	// Handle different content types
-	if isProtobufContentType(contentType) {
-		return s.encodeProtobufResponse(w, output, ctx, canCompress)
+	// Apply response headers from context
+	if ctx.responseHeaders != nil {
+		for key, values := range ctx.responseHeaders {
+			for _, value := range values {
+				w.Header().Add(key, value)
+			}
+		}
 	}
 
-	// Default to JSON
-	return s.encodeJSONResponse(w, output, canCompress)
+	// Handle trailers
+	proto := detectProtocol(r)
+	if len(ctx.responseTrailers) > 0 {
+		if proto.isConnect {
+			// Connect protocol sends trailers as regular headers with "trailer-" prefix
+			for key, values := range ctx.responseTrailers {
+				for _, value := range values {
+					w.Header().Add("trailer-"+key, value)
+				}
+			}
+		} else {
+			// gRPC and gRPC-Web use HTTP trailers
+			trailerKeys := make([]string, 0, len(ctx.responseTrailers))
+			for key := range ctx.responseTrailers {
+				trailerKeys = append(trailerKeys, key)
+			}
+			w.Header().Set("Trailer", strings.Join(trailerKeys, ", "))
+		}
+	}
+
+	// Handle different content types
+	var err error
+	if isProtobufContentType(contentType) {
+		err = s.encodeProtobufResponse(w, output, ctx, canCompress)
+	} else {
+		// Default to JSON
+		err = s.encodeJSONResponse(w, output, canCompress)
+	}
+
+	// Apply trailers after body is written (for non-Connect protocols)
+	if ctx.responseTrailers != nil && !proto.isConnect {
+		for key, values := range ctx.responseTrailers {
+			for _, value := range values {
+				w.Header().Add(key, value)
+			}
+		}
+	}
+
+	return err
 }
 
 // determineContentType determines the response content type
 func determineContentType(r *http.Request) string {
-	contentType := r.Header.Get("Content-Type")
-	accept := r.Header.Get("Accept")
+	p := detectProtocol(r)
 
-	// If Accept header is specified and different from Content-Type, prefer Accept
+	// Handle gRPC-Web
+	if p.isGRPCWeb {
+		if p.wantsJSON {
+			return "application/grpc-web+json"
+		}
+		return "application/grpc-web+proto"
+	}
+
+	// Handle gRPC
+	if p.isGRPC {
+		if p.wantsJSON {
+			return "application/grpc+json"
+		}
+		return contentTypeGRPCProto
+	}
+
+	// Handle Connect
+	if p.isConnect {
+		if p.wantsJSON {
+			return "application/json"
+		}
+		return "application/proto"
+	}
+
+	// Default based on Accept header
+	accept := r.Header.Get("Accept")
 	if accept != "" && accept != "*/*" {
 		return accept
 	}
-	return contentType
+
+	// Default based on Content-Type
+	contentType := r.Header.Get("Content-Type")
+	if contentType != "" {
+		return contentType
+	}
+
+	// Ultimate default
+	return contentTypeJSON
 }
 
 // isProtobufContentType checks if the content type is protobuf
@@ -531,49 +947,66 @@ func isProtobufContentType(contentType string) bool {
 	return contentType == "application/protobuf" ||
 		contentType == "application/x-protobuf" ||
 		contentType == contentTypeProto ||
-		contentType == contentTypeConnectProto
+		contentType == contentTypeConnectProto ||
+		contentType == "application/proto" ||
+		contentType == contentTypeGRPCProto ||
+		contentType == "application/grpc-web+proto" ||
+		strings.Contains(contentType, "+proto") ||
+		strings.Contains(contentType, "protobuf")
 }
 
 // encodeProtobufResponse encodes a protobuf response
 func (s *Service) encodeProtobufResponse(w http.ResponseWriter, output any, ctx *handlerContext, canCompress bool) error {
-	// Convert to JSON first
-	jsonData, err := json.Marshal(output)
-	if err != nil {
-		return fmt.Errorf("failed to marshal to JSON: %w", err)
-	}
+	var data []byte
+	var err error
 
-	// Use hyperpb codec to create and unmarshal message
-	msg, err := ctx.outputCodec.UnmarshalFromJSON(jsonData)
-	if err != nil {
-		return fmt.Errorf("failed to unmarshal JSON to proto: %w", err)
-	}
-	defer ctx.outputCodec.ReleaseMessage(msg)
-
-	// Marshal to protobuf binary using hyperpb codec
-	data, err := ctx.outputCodec.Marshal(msg)
-	if err != nil {
-		return fmt.Errorf("failed to marshal protobuf: %w", err)
+	// Check if output is already a proto.Message
+	if msg, ok := output.(proto.Message); ok && ctx.useProtoOutput {
+		// Direct protobuf marshal
+		data, err = proto.Marshal(msg)
+		if err != nil {
+			return fmt.Errorf("failed to marshal protobuf: %w", err)
+		}
+	} else {
+		// Encode struct to protobuf using codec
+		data, err = ctx.outputCodec.MarshalStruct(output)
+		if err != nil {
+			return fmt.Errorf("failed to marshal struct to protobuf: %w", err)
+		}
 	}
 
 	// Apply compression if needed
 	data = s.maybeCompress(data, w, canCompress)
 
-	w.Header().Set("Content-Type", contentTypeProto)
+	// Content-Type is already set by encodeResponse
 	_, _ = w.Write(data)
 	return nil
 }
 
 // encodeJSONResponse encodes a JSON response
 func (s *Service) encodeJSONResponse(w http.ResponseWriter, output any, canCompress bool) error {
-	data, err := json.Marshal(output)
-	if err != nil {
-		return fmt.Errorf("failed to marshal JSON: %w", err)
+	var data []byte
+	var err error
+
+	// Check if output is a proto.Message - use protojson for better compatibility
+	if msg, ok := output.(proto.Message); ok {
+		// Use protojson for proper JSON encoding of protobuf messages
+		data, err = protojson.Marshal(msg)
+		if err != nil {
+			return fmt.Errorf("failed to marshal protobuf to JSON: %w", err)
+		}
+	} else {
+		// Standard JSON marshal
+		data, err = json.Marshal(output)
+		if err != nil {
+			return fmt.Errorf("failed to marshal JSON: %w", err)
+		}
 	}
 
 	// Apply compression if needed
 	data = s.maybeCompress(data, w, canCompress)
 
-	w.Header().Set("Content-Type", "application/json")
+	// Content-Type is already set by encodeResponse
 	_, _ = w.Write(data)
 	return nil
 }
@@ -663,7 +1096,8 @@ func (s *Service) handleGRPCRequest(w http.ResponseWriter, r *http.Request, ctx 
 	}
 
 	// Decode input
-	inputVal, err := s.decodeGRPCInput(message, ctx)
+	p := detectProtocol(r)
+	inputVal, err := s.decodeGRPCInput(message, ctx, p.wantsJSON)
 	if err != nil {
 		s.writeGRPCError(w, err)
 		return
@@ -699,21 +1133,28 @@ func (s *Service) handleGRPCRequest(w http.ResponseWriter, r *http.Request, ctx 
 	}
 }
 
-// decodeGRPCInput decodes gRPC protobuf input.
-func (s *Service) decodeGRPCInput(data []byte, ctx *handlerContext) (reflect.Value, error) {
+// decodeGRPCInput decodes gRPC input.
+func (s *Service) decodeGRPCInput(data []byte, ctx *handlerContext, isJSON bool) (reflect.Value, error) {
 	// Create input instance
 	inputVal := reflect.New(ctx.method.InputType)
 
-	// Decode protobuf
-	msg, err := ctx.inputCodec.Unmarshal(data)
-	if err != nil {
-		return reflect.Value{}, NewErrorf(CodeInvalidArgument, "failed to unmarshal protobuf: %v", err)
-	}
-	defer ctx.inputCodec.ReleaseMessage(msg)
+	if isJSON {
+		// Decode JSON
+		if err := json.Unmarshal(data, inputVal.Interface()); err != nil {
+			return reflect.Value{}, NewErrorf(CodeInvalidArgument, "failed to unmarshal JSON: %v", err)
+		}
+	} else {
+		// Decode protobuf
+		msg, err := ctx.inputCodec.Unmarshal(data)
+		if err != nil {
+			return reflect.Value{}, NewErrorf(CodeInvalidArgument, "failed to unmarshal protobuf: %v", err)
+		}
+		defer ctx.inputCodec.ReleaseMessage(msg)
 
-	// Convert to struct
-	if err := reflectutil.ProtoToStruct(msg.ProtoReflect(), inputVal.Interface()); err != nil {
-		return reflect.Value{}, NewErrorf(CodeInvalidArgument, "failed to convert proto to struct: %v", err)
+		// Convert to struct
+		if err := reflectutil.ProtoToStruct(msg.ProtoReflect(), inputVal.Interface()); err != nil {
+			return reflect.Value{}, NewErrorf(CodeInvalidArgument, "failed to convert proto to struct: %v", err)
+		}
 	}
 
 	return inputVal, nil
@@ -721,29 +1162,34 @@ func (s *Service) decodeGRPCInput(data []byte, ctx *handlerContext) (reflect.Val
 
 // encodeGRPCResponse encodes and sends a gRPC response.
 func (s *Service) encodeGRPCResponse(w http.ResponseWriter, r *http.Request, output any, ctx *handlerContext) error {
+	// Determine content type based on request
+	p := detectProtocol(r)
+	contentType := contentTypeGRPCProto
+	if p.wantsJSON {
+		contentType = "application/grpc+json"
+	}
+
 	// Set gRPC headers
-	w.Header().Set("Content-Type", "application/grpc+proto")
+	w.Header().Set("Content-Type", contentType)
 	// Declare trailers that will be sent
 	w.Header().Set("Trailer", "grpc-status, grpc-message")
 	w.WriteHeader(http.StatusOK)
 
-	// Convert to protobuf
-	jsonData, err := json.Marshal(output)
-	if err != nil {
-		return fmt.Errorf("failed to marshal to JSON: %w", err)
-	}
-
-	// Use hyperpb codec to create and unmarshal message
-	msg, err := ctx.outputCodec.UnmarshalFromJSON(jsonData)
-	if err != nil {
-		return fmt.Errorf("failed to unmarshal JSON to proto: %w", err)
-	}
-	defer ctx.outputCodec.ReleaseMessage(msg)
-
-	// Marshal to protobuf binary using hyperpb codec
-	data, err := ctx.outputCodec.Marshal(msg)
-	if err != nil {
-		return fmt.Errorf("failed to marshal protobuf: %w", err)
+	// Encode struct based on content type
+	var data []byte
+	var err error
+	if p.wantsJSON {
+		// Encode as JSON for gRPC+JSON
+		data, err = json.Marshal(output)
+		if err != nil {
+			return fmt.Errorf("failed to marshal struct to JSON: %w", err)
+		}
+	} else {
+		// Encode as protobuf
+		data, err = ctx.outputCodec.MarshalStruct(output)
+		if err != nil {
+			return fmt.Errorf("failed to marshal struct to protobuf: %w", err)
+		}
 	}
 
 	// Check if compression should be used
@@ -810,7 +1256,7 @@ func (s *Service) writeGRPCError(w http.ResponseWriter, err error) {
 		rpcErr = NewError(CodeInternal, err.Error())
 	}
 
-	w.Header().Set("Content-Type", "application/grpc+proto")
+	w.Header().Set("Content-Type", contentTypeGRPCProto)
 	w.Header().Set("grpc-status", fmt.Sprintf("%d", grpcStatusCode(rpcErr.Code)))
 	w.Header().Set("grpc-message", rpcErr.Message)
 	w.WriteHeader(http.StatusOK)
@@ -843,5 +1289,94 @@ func parseGRPCTimeout(timeout string) (time.Duration, error) {
 		return time.Duration(value), nil
 	default:
 		return 0, fmt.Errorf("unknown time unit: %c", unit)
+	}
+}
+
+// createStreamingHTTPHandler creates an HTTP handler for streaming methods.
+func (s *Service) createStreamingHTTPHandler(method *Method) http.HandlerFunc {
+	// Prepare handler context once during initialization
+	cachedCtx, err := s.prepareHandlerContext(method)
+	if err != nil {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			s.writeError(w, r, err)
+		})
+	}
+
+	// Cache the prepared context
+	s.handlerCtxCache[method.Name] = cachedCtx
+
+	return func(w http.ResponseWriter, r *http.Request) {
+		// Get context from pool
+		ctx := handlerContextPool.Get().(*handlerContext)
+		defer func() {
+			if ctx.responseHeaders != nil {
+				clear(ctx.responseHeaders)
+			}
+			if ctx.responseTrailers != nil {
+				clear(ctx.responseTrailers)
+			}
+			ctx.requestHeaders = nil
+			handlerContextPool.Put(ctx)
+		}()
+
+		// Copy cached values
+		ctx.inputCodec = cachedCtx.inputCodec
+		ctx.outputCodec = cachedCtx.outputCodec
+		ctx.method = cachedCtx.method
+		ctx.validator = cachedCtx.validator
+		ctx.options = cachedCtx.options
+		ctx.handlerInfo = cachedCtx.handlerInfo
+		ctx.useProtoInput = cachedCtx.useProtoInput
+		ctx.useProtoOutput = cachedCtx.useProtoOutput
+		ctx.newInputFunc = cachedCtx.newInputFunc
+		ctx.handlerFunc = cachedCtx.handlerFunc
+
+		// Initialize mutable fields
+		if ctx.responseHeaders == nil {
+			ctx.responseHeaders = make(map[string][]string)
+		} else {
+			clear(ctx.responseHeaders)
+		}
+		if ctx.responseTrailers == nil {
+			ctx.responseTrailers = make(map[string][]string)
+		} else {
+			clear(ctx.responseTrailers)
+		}
+		ctx.requestHeaders = r.Header
+
+		// Copy interceptors
+		ctx.interceptors = ctx.interceptors[:0]
+		ctx.interceptors = append(ctx.interceptors, cachedCtx.interceptors...)
+
+		// Detect protocol
+		p := detectProtocol(r)
+
+		switch method.StreamType {
+		case StreamTypeServerStream:
+			s.handleServerStreamRequest(w, r, ctx, p)
+		case StreamTypeClientStream:
+			s.handleClientStreamRequest(w, r, ctx, p)
+		case StreamTypeBidiStream:
+			s.handleBidiStreamRequest(w, r, ctx, p)
+		case StreamTypeUnary:
+			// Should not happen - unary methods have their own handler
+			err := NewError(CodeInternal, "Unary method in streaming handler")
+			if p.isConnect {
+				s.writeConnectError(w, r, err)
+			} else if p.isGRPC {
+				s.writeGRPCError(w, err)
+			} else {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+			}
+		default:
+			err := NewError(CodeUnimplemented, "Unknown streaming type")
+			if p.isConnect {
+				s.writeConnectError(w, r, err)
+			} else if p.isGRPC {
+				s.writeGRPCError(w, err)
+			} else {
+				http.Error(w, err.Error(), http.StatusNotImplemented)
+			}
+		}
 	}
 }

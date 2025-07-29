@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>gRPC-Web Example - Hyperway</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            border-radius: 8px;
+            padding: 30px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            margin-bottom: 10px;
+        }
+        .subtitle {
+            color: #666;
+            margin-bottom: 30px;
+        }
+        .section {
+            margin-bottom: 30px;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 6px;
+        }
+        .section h2 {
+            margin-top: 0;
+            color: #444;
+            font-size: 1.3em;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            color: #555;
+            font-weight: 500;
+        }
+        input, select {
+            width: 100%;
+            padding: 8px 12px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+            box-sizing: border-box;
+        }
+        button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            font-size: 14px;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        button:hover {
+            background: #0056b3;
+        }
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+        .response {
+            margin-top: 20px;
+            padding: 15px;
+            background: #e8f4f8;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            white-space: pre-wrap;
+            word-break: break-all;
+        }
+        .error {
+            background: #fee;
+            color: #c00;
+        }
+        .info {
+            margin: 20px 0;
+            padding: 15px;
+            background: #e7f3ff;
+            border-left: 4px solid #007bff;
+            border-radius: 4px;
+        }
+        .calc-inputs {
+            display: flex;
+            gap: 10px;
+            align-items: flex-end;
+        }
+        .calc-inputs .form-group {
+            flex: 1;
+            margin-bottom: 0;
+        }
+        .calc-inputs select {
+            width: 80px;
+        }
+        .protocol-info {
+            font-size: 12px;
+            color: #666;
+            margin-top: 5px;
+        }
+        code {
+            background: #f0f0f0;
+            padding: 2px 4px;
+            border-radius: 3px;
+            font-size: 13px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>gRPC-Web Example</h1>
+        <p class="subtitle">Testing Hyperway's gRPC-Web support with a browser client</p>
+
+        <div class="info">
+            <strong>ℹ️ About this demo:</strong><br>
+            This page demonstrates gRPC-Web communication with a Hyperway server. 
+            The client uses the gRPC-Web protocol with base64 encoding (<code>application/grpc-web-text</code>) 
+            to communicate with the server directly from the browser.
+        </div>
+
+        <div class="section">
+            <h2>Greeter Service</h2>
+            <form id="greetForm">
+                <div class="form-group">
+                    <label for="name">Your Name:</label>
+                    <input type="text" id="name" placeholder="Enter your name" required>
+                </div>
+                <button type="submit">Send Greeting</button>
+                <div class="protocol-info">Endpoint: /grpcweb.example.v1.GreeterService/Greet</div>
+            </form>
+            <div id="greetResponse"></div>
+        </div>
+
+        <div class="section">
+            <h2>Calculator Service</h2>
+            <form id="calcForm">
+                <div class="calc-inputs">
+                    <div class="form-group">
+                        <label for="a">First Number:</label>
+                        <input type="number" id="a" step="any" placeholder="0" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="operator">Operator:</label>
+                        <select id="operator" required>
+                            <option value="+">+</option>
+                            <option value="-">-</option>
+                            <option value="*">×</option>
+                            <option value="/">÷</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="b">Second Number:</label>
+                        <input type="number" id="b" step="any" placeholder="0" required>
+                    </div>
+                    <button type="submit">Calculate</button>
+                </div>
+                <div class="protocol-info">Endpoint: /grpcweb.example.v1.GreeterService/Calculate</div>
+            </form>
+            <div id="calcResponse"></div>
+        </div>
+
+        <div class="section">
+            <h2>Protocol Details</h2>
+            <p>This demo uses the gRPC-Web protocol with the following characteristics:</p>
+            <ul>
+                <li>Content-Type: <code>application/grpc-web-text</code> (base64 encoded)</li>
+                <li>Message Format: 5-byte header (1 flag + 4 length) + protobuf payload</li>
+                <li>Trailers: Sent as a final message with flag 0x80</li>
+                <li>CORS: Enabled for browser access</li>
+            </ul>
+        </div>
+    </div>
+
+    <script>
+        // gRPC-Web client implementation
+        class GRPCWebClient {
+            constructor(baseUrl) {
+                this.baseUrl = baseUrl;
+            }
+
+            // Encode a message frame for gRPC-Web
+            encodeFrame(data, isTrailer = false) {
+                const flag = isTrailer ? 0x80 : 0x00;
+                const length = data.length;
+                
+                // Create frame: 1 byte flag + 4 bytes length + data
+                const frame = new Uint8Array(5 + length);
+                frame[0] = flag;
+                
+                // Write length as big-endian
+                frame[1] = (length >> 24) & 0xff;
+                frame[2] = (length >> 16) & 0xff;
+                frame[3] = (length >> 8) & 0xff;
+                frame[4] = length & 0xff;
+                
+                // Copy data
+                frame.set(data, 5);
+                
+                return frame;
+            }
+
+            // Decode frames from gRPC-Web response
+            decodeFrames(base64Data) {
+                // Decode base64
+                const binaryString = atob(base64Data);
+                const bytes = new Uint8Array(binaryString.length);
+                for (let i = 0; i < binaryString.length; i++) {
+                    bytes[i] = binaryString.charCodeAt(i);
+                }
+
+                const frames = [];
+                let offset = 0;
+
+                while (offset < bytes.length) {
+                    if (offset + 5 > bytes.length) break;
+
+                    const flag = bytes[offset];
+                    const length = (bytes[offset + 1] << 24) |
+                                 (bytes[offset + 2] << 16) |
+                                 (bytes[offset + 3] << 8) |
+                                 bytes[offset + 4];
+
+                    offset += 5;
+
+                    if (offset + length > bytes.length) break;
+
+                    const data = bytes.slice(offset, offset + length);
+                    frames.push({
+                        isTrailer: flag === 0x80,
+                        data: data
+                    });
+
+                    offset += length;
+                }
+
+                return frames;
+            }
+
+            // Parse trailers from trailer frame
+            parseTrailers(data) {
+                const text = new TextDecoder().decode(data);
+                const trailers = {};
+                const lines = text.split('\r\n');
+                
+                for (const line of lines) {
+                    if (!line) continue;
+                    const [key, ...valueParts] = line.split(':');
+                    if (key) {
+                        trailers[key.trim()] = valueParts.join(':').trim();
+                    }
+                }
+                
+                return trailers;
+            }
+
+            // Make a gRPC-Web request
+            async call(service, method, request) {
+                // For this demo, we'll use JSON encoding wrapped in a simple protobuf-like format
+                // In a real implementation, you'd use actual protobuf encoding
+                const jsonData = JSON.stringify(request);
+                const encoder = new TextEncoder();
+                const messageBytes = encoder.encode(jsonData);
+                
+                // Create gRPC-Web frame
+                const frame = this.encodeFrame(messageBytes);
+                
+                // Encode to base64 for text mode
+                const base64Frame = btoa(String.fromCharCode(...frame));
+
+                try {
+                    const response = await fetch(`${this.baseUrl}/${service}/${method}`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/grpc-web-text',
+                            'X-Grpc-Web': '1',
+                            'Accept': 'application/grpc-web-text'
+                        },
+                        body: base64Frame
+                    });
+
+                    const responseData = await response.text();
+                    const frames = this.decodeFrames(responseData);
+                    
+                    let messageData = null;
+                    let trailers = {};
+
+                    for (const frame of frames) {
+                        if (frame.isTrailer) {
+                            trailers = this.parseTrailers(frame.data);
+                        } else {
+                            // For this demo, we expect JSON in the message
+                            const text = new TextDecoder().decode(frame.data);
+                            try {
+                                messageData = JSON.parse(text);
+                            } catch (e) {
+                                messageData = { rawData: text };
+                            }
+                        }
+                    }
+
+                    // Check gRPC status
+                    const grpcStatus = parseInt(trailers['grpc-status'] || '0');
+                    const grpcMessage = trailers['grpc-message'] || '';
+
+                    if (grpcStatus !== 0) {
+                        throw new Error(`gRPC error ${grpcStatus}: ${grpcMessage}`);
+                    }
+
+                    return {
+                        data: messageData,
+                        trailers: trailers
+                    };
+
+                } catch (error) {
+                    throw error;
+                }
+            }
+        }
+
+        // Initialize client
+        const client = new GRPCWebClient('');
+
+        // Handle greet form
+        document.getElementById('greetForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const name = document.getElementById('name').value;
+            const responseDiv = document.getElementById('greetResponse');
+            
+            try {
+                responseDiv.innerHTML = '<div class="response">Sending request...</div>';
+                
+                const result = await client.call(
+                    'grpcweb.example.v1.GreeterService',
+                    'Greet',
+                    { name: name }
+                );
+                
+                responseDiv.innerHTML = `<div class="response">Response:
+${JSON.stringify(result.data, null, 2)}
+
+Trailers:
+${JSON.stringify(result.trailers, null, 2)}</div>`;
+            } catch (error) {
+                responseDiv.innerHTML = `<div class="response error">Error: ${error.message}</div>`;
+            }
+        });
+
+        // Handle calculator form
+        document.getElementById('calcForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const a = parseFloat(document.getElementById('a').value);
+            const b = parseFloat(document.getElementById('b').value);
+            const operator = document.getElementById('operator').value;
+            const responseDiv = document.getElementById('calcResponse');
+            
+            try {
+                responseDiv.innerHTML = '<div class="response">Calculating...</div>';
+                
+                const result = await client.call(
+                    'grpcweb.example.v1.GreeterService',
+                    'Calculate',
+                    { a: a, b: b, operator: operator }
+                );
+                
+                responseDiv.innerHTML = `<div class="response">Response:
+${JSON.stringify(result.data, null, 2)}
+
+Trailers:
+${JSON.stringify(result.trailers, null, 2)}</div>`;
+            } catch (error) {
+                responseDiv.innerHTML = `<div class="response error">Error: ${error.message}</div>`;
+            }
+        });
+    </script>
+</body>
+</html>

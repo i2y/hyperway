@@ -82,3 +82,9 @@ benchmark.txt
 # Documentation build artifacts
 /docs/_build/
 /docs/site/
+
+# Conformance testing (work in progress)
+/conformance/
+
+# Test binaries
+/referenceserver

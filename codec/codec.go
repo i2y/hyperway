@@ -11,8 +11,9 @@ import (
 
 // Codec provides high-level encoding/decoding operations.
 type Codec struct {
-	encoder *Encoder
-	decoder *Decoder
+	encoder       *Encoder
+	decoder       *Decoder
+	structEncoder *StructEncoder
 }
 
 // Options configures codec behavior.
@@ -48,14 +49,18 @@ func New(md protoreflect.MessageDescriptor, opts Options) (*Codec, error) {
 		EnablePooling:      opts.EnablePooling,
 		InitialPoolSize:    opts.PoolSize,
 		AllowUnknownFields: opts.AllowUnknownFields,
+		EnablePGO:          true,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create decoder: %w", err)
 	}
 
+	structEncoder := NewStructEncoder(md)
+
 	return &Codec{
-		encoder: encoder,
-		decoder: decoder,
+		encoder:       encoder,
+		decoder:       decoder,
+		structEncoder: structEncoder,
 	}, nil
 }
 
@@ -95,4 +100,9 @@ func (c *Codec) ReleaseMessage(msg protobuf.Message) {
 // Descriptor returns the message descriptor.
 func (c *Codec) Descriptor() protoreflect.MessageDescriptor {
 	return c.encoder.Descriptor()
+}
+
+// MarshalStruct encodes a Go struct directly to protobuf binary.
+func (c *Codec) MarshalStruct(source any) ([]byte, error) {
+	return c.structEncoder.EncodeStruct(source)
 }

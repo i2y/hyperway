@@ -1,0 +1,5 @@
+connect-server
+*_bench_server
+hyperway_server
+*.prof
+*.bin

@@ -1,0 +1,27 @@
+syntax = "proto3";
+
+package examples.streaming.v1;
+
+service StreamingExample {
+  rpc Count(CountRequest) returns (stream CountResponse);
+  rpc Time(TimeRequest) returns (stream TimeResponse);
+}
+
+message CountRequest {
+  int32 up_to = 1;
+}
+
+message CountResponse {
+  int32 number = 1;
+  string timestamp = 2;
+}
+
+message TimeRequest {
+  int32 interval_seconds = 1;
+  int32 count = 2;
+}
+
+message TimeResponse {
+  string current_time = 1;
+  string message = 2;
+}

@@ -22,6 +22,15 @@ import (
 // fieldNameCache caches snake_case to camelCase conversions
 var fieldNameCache = sync.Map{}
 
+// fieldMappingCache caches field mappings for struct types to avoid repeated reflection
+var fieldMappingCache = sync.Map{} // map[reflect.Type]map[string]fieldMapping
+
+type fieldMapping struct {
+	fieldIndex int
+	jsonName   string
+	protoName  string
+}
+
 // ProtoToStruct converts a protobuf message to a Go struct using reflection.
 func ProtoToStruct(msg protoreflect.Message, target any) error {
 	targetValue := reflect.ValueOf(target)
@@ -29,7 +38,6 @@ func ProtoToStruct(msg protoreflect.Message, target any) error {
 		return fmt.Errorf("target must be a pointer to struct")
 	}
 
-	// Use direct reflection-based conversion
 	return protoToStructDirect(msg, targetValue.Elem())
 }
 
@@ -43,7 +51,6 @@ func StructToProto(src any, msg protoreflect.Message) error {
 		return fmt.Errorf("source must be a struct or pointer to struct")
 	}
 
-	// Use direct reflection-based conversion
 	return structToProtoDirect(srcValue, msg)
 }
 
@@ -116,6 +123,69 @@ func structToProtoDirect(src reflect.Value, msg protoreflect.Message) error {
 
 // setFieldValue sets a struct field value from a proto value
 func setFieldValue(field reflect.Value, protoValue protoreflect.Value, fd protoreflect.FieldDescriptor) error {
+	// Handle repeated fields
+	if fd.Cardinality() == protoreflect.Repeated {
+		// Check if the field is a slice
+		if field.Kind() != reflect.Slice {
+			return fmt.Errorf("repeated field %s requires slice type in struct, got %v", fd.Name(), field.Kind())
+		}
+
+		// Get the list
+		list := protoValue.List()
+
+		// Create a new slice with the appropriate length
+		sliceType := field.Type()
+		elemType := sliceType.Elem()
+		newSlice := reflect.MakeSlice(sliceType, list.Len(), list.Len())
+
+		// Process each element
+		for i := 0; i < list.Len(); i++ {
+			elem := newSlice.Index(i)
+			listValue := list.Get(i)
+
+			switch fd.Kind() { //nolint:exhaustive
+			case protoreflect.BoolKind:
+				elem.SetBool(listValue.Bool())
+			case protoreflect.Int32Kind, protoreflect.Sint32Kind, protoreflect.Sfixed32Kind:
+				elem.SetInt(listValue.Int())
+			case protoreflect.Int64Kind, protoreflect.Sint64Kind, protoreflect.Sfixed64Kind:
+				elem.SetInt(listValue.Int())
+			case protoreflect.Uint32Kind, protoreflect.Fixed32Kind:
+				elem.SetUint(listValue.Uint())
+			case protoreflect.Uint64Kind, protoreflect.Fixed64Kind:
+				elem.SetUint(listValue.Uint())
+			case protoreflect.FloatKind:
+				elem.SetFloat(float64(listValue.Float()))
+			case protoreflect.DoubleKind:
+				elem.SetFloat(listValue.Float())
+			case protoreflect.StringKind:
+				elem.SetString(listValue.String())
+			case protoreflect.BytesKind:
+				elem.SetBytes(listValue.Bytes())
+			case protoreflect.MessageKind:
+				// For message types, need to handle pointers
+				if elemType.Kind() == reflect.Ptr {
+					// Create new pointer element
+					newElem := reflect.New(elemType.Elem())
+					if err := protoToStructDirect(listValue.Message(), newElem.Elem()); err != nil {
+						return fmt.Errorf("failed to convert repeated message element %d: %w", i, err)
+					}
+					elem.Set(newElem)
+				} else if elemType.Kind() == reflect.Struct {
+					if err := protoToStructDirect(listValue.Message(), elem); err != nil {
+						return fmt.Errorf("failed to convert repeated message element %d: %w", i, err)
+					}
+				}
+			default:
+				return fmt.Errorf("unsupported repeated field kind: %v", fd.Kind())
+			}
+		}
+
+		field.Set(newSlice)
+		return nil
+	}
+
+	// Handle non-repeated fields
 	switch fd.Kind() { //nolint:exhaustive // EnumKind and GroupKind are not needed
 	case protoreflect.BoolKind:
 		field.SetBool(protoValue.Bool())
@@ -178,36 +248,60 @@ func snakeToCamel(s string) string {
 	return camel
 }
 
-// findStructField finds a struct field by proto field name
-// It tries multiple strategies:
-// 1. Look for json tag matching the proto field name
-// 2. Try CamelCase conversion
-// 3. Try exact match
-func findStructField(target reflect.Value, protoFieldName string) (reflect.Value, bool) {
-	targetType := target.Type()
+// getFieldMappings returns cached field mappings for a struct type
+func getFieldMappings(structType reflect.Type) map[string]fieldMapping {
+	if cached, ok := fieldMappingCache.Load(structType); ok {
+		return cached.(map[string]fieldMapping)
+	}
 
-	// First, try to find by json tag
-	for i := 0; i < targetType.NumField(); i++ {
-		field := targetType.Field(i)
-		jsonTag := field.Tag.Get("json")
-		if jsonTag != "" {
-			// Parse json tag (handle "name,omitempty" format)
-			tagName := strings.Split(jsonTag, ",")[0]
-			if tagName == protoFieldName {
-				return target.Field(i), true
+	mappings := make(map[string]fieldMapping)
+
+	for i := 0; i < structType.NumField(); i++ {
+		field := structType.Field(i)
+		if !field.IsExported() {
+			continue
+		}
+
+		mapping := fieldMapping{fieldIndex: i}
+
+		// Get field name from json tag or use field name
+		fieldName := field.Name
+		if jsonTag := field.Tag.Get("json"); jsonTag != "" {
+			parts := strings.Split(jsonTag, ",")
+			if parts[0] != "" && parts[0] != "-" {
+				fieldName = parts[0]
+				mapping.jsonName = parts[0]
 			}
+		}
+
+		// Store proto field name (snake_case)
+		protoFieldName := camelToSnake(fieldName)
+		mapping.protoName = protoFieldName
+
+		// Map by multiple keys for fast lookup
+		mappings[protoFieldName] = mapping // snake_case
+		mappings[fieldName] = mapping      // original name
+		if mapping.jsonName != "" {
+			mappings[mapping.jsonName] = mapping // json tag name
+		}
+
+		// Also map CamelCase version of snake_case
+		camelName := snakeToCamel(protoFieldName)
+		if camelName != fieldName {
+			mappings[camelName] = mapping
 		}
 	}
 
-	// Second, try CamelCase conversion
-	camelName := snakeToCamel(protoFieldName)
-	if field := target.FieldByName(camelName); field.IsValid() {
-		return field, true
-	}
+	fieldMappingCache.Store(structType, mappings)
+	return mappings
+}
 
-	// Third, try exact match
-	if field := target.FieldByName(protoFieldName); field.IsValid() {
-		return field, true
+// findStructField finds a struct field by proto field name using cached mappings
+func findStructField(target reflect.Value, protoFieldName string) (reflect.Value, bool) {
+	mappings := getFieldMappings(target.Type())
+
+	if mapping, ok := mappings[protoFieldName]; ok {
+		return target.Field(mapping.fieldIndex), true
 	}
 
 	return reflect.Value{}, false
@@ -247,37 +341,239 @@ func CreateDynamicMessage(md protoreflect.MessageDescriptor) *dynamicpb.Message 
 
 // setProtoValue sets a proto field value from a struct value
 func setProtoValue(msg protoreflect.Message, fd protoreflect.FieldDescriptor, value reflect.Value) error { //nolint:gocyclo // Many field types need handling
+	// Skip invalid values
+	if !value.IsValid() {
+		return nil
+	}
+
+	// Handle nil pointers
+	if value.Kind() == reflect.Ptr && value.IsNil() {
+		return nil
+	}
+	// Handle repeated fields
+	if fd.Cardinality() == protoreflect.Repeated {
+		// Dereference pointer if needed
+		if value.Kind() == reflect.Ptr && !value.IsNil() {
+			value = value.Elem()
+		}
+
+		// Check if the value is a slice or array
+		if value.Kind() != reflect.Slice && value.Kind() != reflect.Array {
+			return fmt.Errorf("repeated field %s requires slice or array, got %v", fd.Name(), value.Kind())
+		}
+
+		// Get or create the list
+		list := msg.Mutable(fd).List()
+
+		// Add each element
+		for i := 0; i < value.Len(); i++ {
+			elem := value.Index(i)
+
+			// Dereference element pointer if needed for scalar types
+			elemVal := elem
+			if elem.Kind() == reflect.Ptr && !elem.IsNil() && fd.Kind() != protoreflect.MessageKind {
+				elemVal = elem.Elem()
+			}
+
+			switch fd.Kind() { //nolint:exhaustive
+			case protoreflect.BoolKind:
+				if elemVal.Kind() != reflect.Bool {
+					return fmt.Errorf("repeated field %s: expected bool, got %v", fd.Name(), elemVal.Kind())
+				}
+				list.Append(protoreflect.ValueOfBool(elemVal.Bool()))
+			case protoreflect.Int32Kind, protoreflect.Sint32Kind, protoreflect.Sfixed32Kind:
+				if !isNumericKind(elemVal.Kind()) {
+					return fmt.Errorf("repeated field %s: expected numeric type, got %v", fd.Name(), elemVal.Kind())
+				}
+				val := toInt64(elemVal)
+				if val < math.MinInt32 || val > math.MaxInt32 {
+					return fmt.Errorf("repeated field %s: value %d out of int32 range", fd.Name(), val)
+				}
+				list.Append(protoreflect.ValueOfInt32(int32(val)))
+			case protoreflect.Int64Kind, protoreflect.Sint64Kind, protoreflect.Sfixed64Kind:
+				if !isNumericKind(elemVal.Kind()) {
+					return fmt.Errorf("repeated field %s: expected numeric type, got %v", fd.Name(), elemVal.Kind())
+				}
+				list.Append(protoreflect.ValueOfInt64(toInt64(elemVal)))
+			case protoreflect.Uint32Kind, protoreflect.Fixed32Kind:
+				if !isNumericKind(elemVal.Kind()) {
+					return fmt.Errorf("repeated field %s: expected numeric type, got %v", fd.Name(), elemVal.Kind())
+				}
+				val := toUint64(elemVal)
+				if val > math.MaxUint32 {
+					return fmt.Errorf("repeated field %s: value %d out of uint32 range", fd.Name(), val)
+				}
+				list.Append(protoreflect.ValueOfUint32(uint32(val)))
+			case protoreflect.Uint64Kind, protoreflect.Fixed64Kind:
+				if !isNumericKind(elemVal.Kind()) {
+					return fmt.Errorf("repeated field %s: expected numeric type, got %v", fd.Name(), elemVal.Kind())
+				}
+				list.Append(protoreflect.ValueOfUint64(toUint64(elemVal)))
+			case protoreflect.FloatKind:
+				if !isNumericKind(elemVal.Kind()) {
+					return fmt.Errorf("repeated field %s: expected numeric type, got %v", fd.Name(), elemVal.Kind())
+				}
+				list.Append(protoreflect.ValueOfFloat32(float32(toFloat64(elemVal))))
+			case protoreflect.DoubleKind:
+				if !isNumericKind(elemVal.Kind()) {
+					return fmt.Errorf("repeated field %s: expected numeric type, got %v", fd.Name(), elemVal.Kind())
+				}
+				list.Append(protoreflect.ValueOfFloat64(toFloat64(elemVal)))
+			case protoreflect.StringKind:
+				if elemVal.Kind() != reflect.String {
+					return fmt.Errorf("repeated field %s: expected string, got %v", fd.Name(), elemVal.Kind())
+				}
+				list.Append(protoreflect.ValueOfString(elemVal.String()))
+			case protoreflect.BytesKind:
+				switch elemVal.Kind() { //nolint:exhaustive // only handling expected types
+				case reflect.Slice:
+					if elemVal.Type().Elem().Kind() == reflect.Uint8 {
+						list.Append(protoreflect.ValueOfBytes(elemVal.Bytes()))
+					} else {
+						return fmt.Errorf("repeated field %s: expected []byte, got %v", fd.Name(), elemVal.Type())
+					}
+				case reflect.String:
+					list.Append(protoreflect.ValueOfBytes([]byte(elemVal.String())))
+				default:
+					return fmt.Errorf("repeated field %s: expected []byte or string, got %v", fd.Name(), elemVal.Kind())
+				}
+			case protoreflect.MessageKind:
+				// For repeated messages, create a new message for each element
+				nestedMsg := list.NewElement().Message()
+				if elem.Kind() == reflect.Ptr {
+					if !elem.IsNil() {
+						if err := structToProtoDirect(elem.Elem(), nestedMsg); err != nil {
+							return fmt.Errorf("failed to convert repeated message element %d: %w", i, err)
+						}
+					} else {
+						continue // Skip nil pointers
+					}
+				} else if elem.Kind() == reflect.Struct {
+					if err := structToProtoDirect(elem, nestedMsg); err != nil {
+						return fmt.Errorf("failed to convert repeated message element %d: %w", i, err)
+					}
+				}
+				list.Append(protoreflect.ValueOfMessage(nestedMsg))
+			default:
+				return fmt.Errorf("unsupported repeated field kind: %v", fd.Kind())
+			}
+		}
+		return nil
+	}
+
+	// Handle non-repeated fields
 	switch fd.Kind() { //nolint:exhaustive // EnumKind and GroupKind are not needed
 	case protoreflect.BoolKind:
+		// Dereference pointer if needed
+		if value.Kind() == reflect.Ptr && !value.IsNil() {
+			value = value.Elem()
+		}
+		// Ensure we have a bool
+		if value.Kind() != reflect.Bool {
+			return fmt.Errorf("expected bool for field %s, got %v", fd.Name(), value.Kind())
+		}
 		msg.Set(fd, protoreflect.ValueOfBool(value.Bool()))
 	case protoreflect.Int32Kind, protoreflect.Sint32Kind, protoreflect.Sfixed32Kind:
+		// Dereference pointer if needed
+		if value.Kind() == reflect.Ptr && !value.IsNil() {
+			value = value.Elem()
+		}
+		// Ensure we have a numeric type
+		if !isNumericKind(value.Kind()) {
+			return fmt.Errorf("expected numeric type for field %s, got %v", fd.Name(), value.Kind())
+		}
 		// Check for overflow before conversion
-		intVal := value.Int()
+		intVal := toInt64(value)
 		if intVal > math.MaxInt32 || intVal < math.MinInt32 {
 			return fmt.Errorf("int32 overflow: %d", intVal)
 		}
 		msg.Set(fd, protoreflect.ValueOfInt32(int32(intVal)))
 	case protoreflect.Int64Kind, protoreflect.Sint64Kind, protoreflect.Sfixed64Kind:
-		msg.Set(fd, protoreflect.ValueOfInt64(value.Int()))
+		// Dereference pointer if needed
+		if value.Kind() == reflect.Ptr && !value.IsNil() {
+			value = value.Elem()
+		}
+		// Ensure we have a numeric type
+		if !isNumericKind(value.Kind()) {
+			return fmt.Errorf("expected numeric type for field %s, got %v", fd.Name(), value.Kind())
+		}
+		msg.Set(fd, protoreflect.ValueOfInt64(toInt64(value)))
 	case protoreflect.Uint32Kind, protoreflect.Fixed32Kind:
+		// Dereference pointer if needed
+		if value.Kind() == reflect.Ptr && !value.IsNil() {
+			value = value.Elem()
+		}
+		// Ensure we have a numeric type
+		if !isNumericKind(value.Kind()) {
+			return fmt.Errorf("expected numeric type for field %s, got %v", fd.Name(), value.Kind())
+		}
 		// Check for overflow before conversion
-		uintVal := value.Uint()
+		uintVal := toUint64(value)
 		if uintVal > math.MaxUint32 {
 			return fmt.Errorf("uint32 overflow: %d", uintVal)
 		}
 		msg.Set(fd, protoreflect.ValueOfUint32(uint32(uintVal)))
 	case protoreflect.Uint64Kind, protoreflect.Fixed64Kind:
-		msg.Set(fd, protoreflect.ValueOfUint64(value.Uint()))
+		// Dereference pointer if needed
+		if value.Kind() == reflect.Ptr && !value.IsNil() {
+			value = value.Elem()
+		}
+		// Ensure we have a numeric type
+		if !isNumericKind(value.Kind()) {
+			return fmt.Errorf("expected numeric type for field %s, got %v", fd.Name(), value.Kind())
+		}
+		msg.Set(fd, protoreflect.ValueOfUint64(toUint64(value)))
 	case protoreflect.FloatKind:
-		msg.Set(fd, protoreflect.ValueOfFloat32(float32(value.Float())))
+		// Dereference pointer if needed
+		if value.Kind() == reflect.Ptr && !value.IsNil() {
+			value = value.Elem()
+		}
+		// Ensure we have a numeric type
+		if !isNumericKind(value.Kind()) {
+			return fmt.Errorf("expected numeric type for field %s, got %v", fd.Name(), value.Kind())
+		}
+		msg.Set(fd, protoreflect.ValueOfFloat32(float32(toFloat64(value))))
 	case protoreflect.DoubleKind:
-		msg.Set(fd, protoreflect.ValueOfFloat64(value.Float()))
+		// Dereference pointer if needed
+		if value.Kind() == reflect.Ptr && !value.IsNil() {
+			value = value.Elem()
+		}
+		// Ensure we have a numeric type
+		if !isNumericKind(value.Kind()) {
+			return fmt.Errorf("expected numeric type for field %s, got %v", fd.Name(), value.Kind())
+		}
+		msg.Set(fd, protoreflect.ValueOfFloat64(toFloat64(value)))
 	case protoreflect.StringKind:
+		// Dereference pointer if needed
+		if value.Kind() == reflect.Ptr && !value.IsNil() {
+			value = value.Elem()
+		}
+		// Ensure we have a string
+		if value.Kind() != reflect.String {
+			return fmt.Errorf("expected string for field %s, got %v", fd.Name(), value.Kind())
+		}
 		msg.Set(fd, protoreflect.ValueOfString(value.String()))
 	case protoreflect.BytesKind:
-		msg.Set(fd, protoreflect.ValueOfBytes(value.Bytes()))
+		// Dereference pointer if needed
+		if value.Kind() == reflect.Ptr && !value.IsNil() {
+			value = value.Elem()
+		}
+		// Handle both []byte and string
+		switch value.Kind() { //nolint:exhaustive // only handling expected types
+		case reflect.Slice:
+			if value.Type().Elem().Kind() == reflect.Uint8 {
+				msg.Set(fd, protoreflect.ValueOfBytes(value.Bytes()))
+			} else {
+				return fmt.Errorf("expected []byte for field %s, got %v", fd.Name(), value.Type())
+			}
+		case reflect.String:
+			msg.Set(fd, protoreflect.ValueOfBytes([]byte(value.String())))
+		default:
+			return fmt.Errorf("expected []byte or string for field %s, got %v", fd.Name(), value.Kind())
+		}
 	case protoreflect.MessageKind:
 		// For nested messages, recursively convert
+		// Don't dereference here, handle it in the condition
 		nestedMsg := msg.Mutable(fd).Message()
 		if value.Kind() == reflect.Ptr {
 			if !value.IsNil() {
@@ -382,6 +678,66 @@ func DurationPBToDuration(d *durationpb.Duration) time.Duration {
 		return 0
 	}
 	return d.AsDuration()
+}
+
+// Helper functions for numeric conversions
+
+// isNumericKind checks if a reflect.Kind is numeric
+func isNumericKind(k reflect.Kind) bool {
+	switch k { //nolint:exhaustive // only checking numeric types
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
+		reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64,
+		reflect.Float32, reflect.Float64:
+		return true
+	default:
+		return false
+	}
+}
+
+// toInt64 converts any numeric value to int64
+func toInt64(v reflect.Value) int64 {
+	switch v.Kind() { //nolint:exhaustive
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		return v.Int()
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		return int64(v.Uint()) //nolint:gosec // conversion between numeric types in protobuf context
+	case reflect.Float32, reflect.Float64:
+		return int64(v.Float())
+	default:
+		return 0
+	}
+}
+
+// toUint64 converts any numeric value to uint64
+func toUint64(v reflect.Value) uint64 {
+	switch v.Kind() { //nolint:exhaustive
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		ival := v.Int()
+		if ival < 0 {
+			return 0 // Negative values are clamped to 0 for unsigned types
+		}
+		return uint64(ival)
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		return v.Uint()
+	case reflect.Float32, reflect.Float64:
+		return uint64(v.Float())
+	default:
+		return 0
+	}
+}
+
+// toFloat64 converts any numeric value to float64
+func toFloat64(v reflect.Value) float64 {
+	switch v.Kind() { //nolint:exhaustive
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		return float64(v.Int())
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		return float64(v.Uint())
+	case reflect.Float32, reflect.Float64:
+		return v.Float()
+	default:
+		return 0
+	}
 }
 
 // handleWellKnownProtoToStruct handles conversion from well-known proto types to Go types
@@ -670,6 +1026,17 @@ func setProtoFieldWithWellKnown(msg protoreflect.Message, fd protoreflect.FieldD
 		// Empty message - create empty message
 		msg.Mutable(fd).Message()
 		return nil
+	case "google.protobuf.Any":
+		// Handle *anypb.Any
+		if value.Type() == reflect.TypeOf(&anypb.Any{}) {
+			if !value.IsNil() {
+				anyVal := value.Interface().(*anypb.Any)
+				anyMsg := msg.Mutable(fd).Message()
+				anyMsg.Set(anyMsg.Descriptor().Fields().ByName("type_url"), protoreflect.ValueOfString(anyVal.TypeUrl))
+				anyMsg.Set(anyMsg.Descriptor().Fields().ByName("value"), protoreflect.ValueOfBytes(anyVal.Value))
+			}
+			return nil
+		}
 	}
 
 	return fmt.Errorf("not a well-known type or unsupported conversion")

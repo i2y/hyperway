@@ -11,6 +11,8 @@ import (
 
 	"github.com/i2y/hyperway/gateway"
 	"github.com/i2y/hyperway/rpc"
+	"golang.org/x/net/http2"
+	"golang.org/x/net/http2/h2c"
 )
 
 // EchoRequest represents an echo request.
@@ -141,8 +143,13 @@ func main() {
 		log.Fatalf("Failed to create gateway: %v", err)
 	}
 
-	// Create HTTP/2 server with keepalive
-	server := gateway.NewHTTP2Server(":8080", gw, gatewayOpts)
+	// Create HTTP server with h2c for both HTTP/1.1 and HTTP/2 support
+	h2s := &http2.Server{}
+	handler := h2c.NewHandler(gw, h2s)
+	server := &http.Server{
+		Addr:    ":8080",
+		Handler: handler,
+	}
 
 	fmt.Println("Server Configuration:")
 	fmt.Printf("- Keepalive Time: %v\n", keepaliveParams.Time)
