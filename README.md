@@ -37,7 +37,7 @@ Hyperway implements gRPC and Connect RPC protocols with dynamic capabilities:
 - Generates Protobuf schemas from your Go structs at runtime
 - Supports gRPC (Protobuf) and Connect RPC (both Protobuf and JSON)
 - Maintains wire compatibility with standard gRPC/Connect clients
-- Supports unary and server-streaming RPCs with full protocol compliance
+- Supports unary and server-streaming RPCs
 
 ## 📊 Performance
 
@@ -69,7 +69,7 @@ For detailed benchmarks and performance characteristics, see the [protocol-bench
 - 📚 **OpenAPI Generation**: Automatic API documentation
 - 🌐 **Browser Support**: Native gRPC-Web support without proxy
 - 🗜️ **Compression**: Built-in gzip compression for all protocols
-- 🔁 **Server Streaming**: Full support for server-streaming RPCs
+- 🔁 **Server Streaming**: Support for server-streaming RPCs
 - ⏰ **Well-Known Types**: Support for common Google Well-Known Types (Timestamp, Duration, Empty, Any, Struct, Value, ListValue, FieldMask)
 - 🔌 **Custom Interceptors**: Middleware for logging, auth, metrics, etc.
 - 📦 **Proto3 Optional**: Full support for optional fields
