@@ -566,33 +566,33 @@ func parseRequestTimeout(r *http.Request, isConnect bool) context.Context {
 func (s *Service) handleRequest(w http.ResponseWriter, r *http.Request, ctx *handlerContext) {
 	// Setup request context
 	ctx.requestHeaders = r.Header
-	proto := detectProtocol(r)
+	protocolInfo := detectProtocol(r)
 
 	// Validate method
 	if r.Method != http.MethodPost {
-		s.handleMethodNotAllowed(w, r, proto)
+		s.handleMethodNotAllowed(w, r, protocolInfo)
 		return
 	}
 
 	// Route to appropriate handler
 	if ctx.method.StreamType != StreamTypeUnary {
-		s.handleStreamingRequest(w, r, ctx, proto)
+		s.handleStreamingRequest(w, r, ctx, protocolInfo)
 		return
 	}
 
 	// Handle unary request
-	s.handleUnaryRequest(w, r, ctx, proto)
+	s.handleUnaryRequest(w, r, ctx, protocolInfo)
 }
 
 // handleStreamingRequest routes to the appropriate streaming handler
-func (s *Service) handleStreamingRequest(w http.ResponseWriter, r *http.Request, ctx *handlerContext, proto protocolInfo) {
+func (s *Service) handleStreamingRequest(w http.ResponseWriter, r *http.Request, ctx *handlerContext, protocolInfo protocolInfo) {
 	switch ctx.method.StreamType {
 	case StreamTypeServerStream:
-		s.handleServerStreamRequest(w, r, ctx, proto)
+		s.handleServerStreamRequest(w, r, ctx, protocolInfo)
 	case StreamTypeClientStream:
-		s.handleClientStreamRequest(w, r, ctx, proto)
+		s.handleClientStreamRequest(w, r, ctx, protocolInfo)
 	case StreamTypeBidiStream:
-		s.handleBidiStreamRequest(w, r, ctx, proto)
+		s.handleBidiStreamRequest(w, r, ctx, protocolInfo)
 	case StreamTypeUnary:
 		// This should not happen as unary is handled separately
 		panic("unreachable: unary stream type in streaming handler")
@@ -600,9 +600,9 @@ func (s *Service) handleStreamingRequest(w http.ResponseWriter, r *http.Request,
 }
 
 // handleUnaryRequest handles unary RPC requests
-func (s *Service) handleUnaryRequest(w http.ResponseWriter, r *http.Request, ctx *handlerContext, proto protocolInfo) {
+func (s *Service) handleUnaryRequest(w http.ResponseWriter, r *http.Request, ctx *handlerContext, protocolInfo protocolInfo) {
 	// Parse timeout
-	reqCtx := parseRequestTimeout(r, proto.isConnect)
+	reqCtx := parseRequestTimeout(r, protocolInfo.isConnect)
 	if cancel, ok := reqCtx.Value(contextKeyCancel).(context.CancelFunc); ok {
 		defer cancel()
 		// Remove cancel from context to avoid leaking it
@@ -610,17 +610,17 @@ func (s *Service) handleUnaryRequest(w http.ResponseWriter, r *http.Request, ctx
 	}
 
 	// Special handling for gRPC
-	if proto.isGRPC {
+	if protocolInfo.isGRPC {
 		s.handleGRPCRequest(w, r, ctx)
 		return
 	}
 
 	// Process standard unary request
-	s.processUnaryRequest(w, r, ctx, proto, reqCtx)
+	s.processUnaryRequest(w, r, ctx, protocolInfo, reqCtx)
 }
 
 // processUnaryRequest processes a standard unary request
-func (s *Service) processUnaryRequest(w http.ResponseWriter, r *http.Request, ctx *handlerContext, proto protocolInfo, reqCtx context.Context) {
+func (s *Service) processUnaryRequest(w http.ResponseWriter, r *http.Request, ctx *handlerContext, protocolInfo protocolInfo, reqCtx context.Context) {
 	// Read and decompress body
 	body, err := s.readRequestBody(r)
 	if err != nil {
@@ -643,7 +643,7 @@ func (s *Service) processUnaryRequest(w http.ResponseWriter, r *http.Request, ct
 	}
 
 	// Encode and send response
-	if err := s.encodeResponse(w, r, output, ctx, proto.isConnect); err != nil {
+	if err := s.encodeResponse(w, r, output, ctx, protocolInfo.isConnect); err != nil {
 		s.writeError(w, r, err)
 	}
 }
@@ -983,9 +983,9 @@ func (s *Service) encodeResponse(w http.ResponseWriter, r *http.Request, output 
 	}
 
 	// Handle trailers
-	proto := detectProtocol(r)
+	protocolInfo := detectProtocol(r)
 	if len(ctx.responseTrailers) > 0 {
-		if proto.isConnect {
+		if protocolInfo.isConnect {
 			// Connect protocol sends trailers as regular headers with "trailer-" prefix
 			for key, values := range ctx.responseTrailers {
 				for _, value := range values {
@@ -1012,7 +1012,7 @@ func (s *Service) encodeResponse(w http.ResponseWriter, r *http.Request, output 
 	}
 
 	// Apply trailers after body is written (for non-Connect protocols)
-	if ctx.responseTrailers != nil && !proto.isConnect {
+	if ctx.responseTrailers != nil && !protocolInfo.isConnect {
 		for key, values := range ctx.responseTrailers {
 			for _, value := range values {
 				w.Header().Add(key, value)

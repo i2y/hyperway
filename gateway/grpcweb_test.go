@@ -321,8 +321,8 @@ func TestGRPCWebHandler(t *testing.T) {
 			// Parse trailers
 			trailers := parseTrailerFrame(frame.payload)
 
-			if status := trailers.Get("grpc-status"); status != "0" {
-				t.Errorf("expected status 0, got %q", status)
+			if grpcStatus := trailers.Get("grpc-status"); grpcStatus != "0" {
+				t.Errorf("expected status 0, got %q", grpcStatus)
 			}
 
 			if message := trailers.Get("grpc-message"); message != "OK" {
@@ -373,8 +373,8 @@ func TestGRPCWebErrorHandling(t *testing.T) {
 	}
 
 	trailers := parseTrailerFrame(frame.payload)
-	if status := trailers.Get("grpc-status"); status != strconv.Itoa(int(codes.NotFound)) {
-		t.Errorf("expected NotFound status, got %q", status)
+	if grpcStatus := trailers.Get("grpc-status"); grpcStatus != strconv.Itoa(int(codes.NotFound)) {
+		t.Errorf("expected NotFound status, got %q", grpcStatus)
 	}
 }
 
@@ -712,8 +712,8 @@ func TestErrorToStatus(t *testing.T) {
 			frame, _ = reader.readFrame()
 			trailers := parseTrailerFrame(frame.payload)
 
-			if status := trailers.Get("grpc-status"); status != strconv.Itoa(int(tt.expectedCode)) {
-				t.Errorf("wrong status code: got %s, want %d", status, tt.expectedCode)
+			if grpcStatus := trailers.Get("grpc-status"); grpcStatus != strconv.Itoa(int(tt.expectedCode)) {
+				t.Errorf("wrong status code: got %s, want %d", grpcStatus, tt.expectedCode)
 			}
 
 			if msg := trailers.Get("grpc-message"); msg != tt.expectedMsg {

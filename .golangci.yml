@@ -38,98 +38,93 @@ linters:
     - gochecknoinits # we use init functions
     - gochecknoglobals # we use some globals
 
-linters-settings:
-  gocyclo:
-    min-complexity: 15
-  
-  goconst:
-    min-len: 3
-    min-occurrences: 3
-  
-  mnd:
-    # Don't flag common values like timeouts, ports, permissions
-    checks:
-      - argument
-      - case
-      - condition
-      - operation
-      - return
-      - assign
-    ignored-numbers:
-      - '0'
-      - '1'
-      - '2'
-      - '3'
-      - '5'
-      - '8'
-      - '10'
-      - '15'
-      - '24'
-      - '30'
-      - '60'
-      - '100'
-      - '200'
-      - '404'
-      - '500'
-      - '0600'
-      - '0644'
-      - '0755'
-      - '8080'
-      - '9090'
-  
-  misspell:
-    locale: US
-  
-  lll:
-    line-length: 140
-  
-  gocritic:
-    enabled-tags:
-      - diagnostic
-      - experimental
-      - opinionated
-      - performance
-      - style
-    disabled-checks:
-      - dupImport
-      - ifElseChain
-      - octalLiteral
-      - whyNoLint
-      - wrapperFunc
-  
-formatters:
-  enable:
-    - gofmt
-    - goimports
+  settings:
+    gocyclo:
+      min-complexity: 15
+    
+    goconst:
+      min-len: 3
+      min-occurrences: 3
+    
+    mnd:
+      # Don't flag common values like timeouts, ports, permissions
+      checks:
+        - argument
+        - case
+        - condition
+        - operation
+        - return
+        - assign
+      ignored-numbers:
+        - '0'
+        - '1'
+        - '2'
+        - '3'
+        - '5'
+        - '8'
+        - '10'
+        - '15'
+        - '24'
+        - '30'
+        - '60'
+        - '100'
+        - '200'
+        - '404'
+        - '500'
+        - '0600'
+        - '0644'
+        - '0755'
+        - '8080'
+        - '9090'
+    
+    misspell:
+      locale: US
+    
+    lll:
+      line-length: 140
+    
+    gocritic:
+      enabled-tags:
+        - diagnostic
+        - experimental
+        - opinionated
+        - performance
+        - style
+      disabled-checks:
+        - dupImport
+        - ifElseChain
+        - octalLiteral
+        - whyNoLint
+        - wrapperFunc
+    
+    goimports:
+      local-prefixes: github.com/i2y/hyperway
 
-formatters-settings:
-  goimports:
-    local-prefixes: github.com/i2y/hyperway
+  exclusions:
+    rules:
+      # Exclude some linters from running on tests files
+      - path: _test\.go
+        linters:
+          - gocyclo
+          - errcheck
+          - dupl
+          - gosec
+          - mnd
+
+      # Exclude example files
+      - path: examples/
+        linters:
+          - errcheck
+          - ineffassign
+          - deadcode
+          - unused
+
+      # Exclude generated files
+      - path: \.pb\.go
+        linters:
+          - all
 
 issues:
-  exclude-rules:
-    # Exclude some linters from running on tests files
-    - path: _test\.go
-      linters:
-        - gocyclo
-        - errcheck
-        - dupl
-        - gosec
-        - mnd
-
-    # Exclude example files
-    - path: examples/
-      linters:
-        - errcheck
-        - ineffassign
-        - deadcode
-        - unused
-
-    # Exclude generated files
-    - path: \.pb\.go
-      linters:
-        - all
-
   # Maximum issues count per one linter
   max-issues-per-linter: 50
 
@@ -138,4 +133,3 @@ issues:
 
   # Show only new issues created after git revision
   new: false
-  

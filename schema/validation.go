@@ -149,49 +149,61 @@ func ExtractValidationFromJSONName(jsonName string) (name, validation string) {
 
 // ConvertToProtobufValidation converts Go validation tags to protobuf-compatible validation.
 // This is a simplified version - in production, you'd want to use proper protobuf extensions.
+// validationPatterns defines regex patterns for validation rules.
+var validationPatterns = map[string]string{
+	"email":    `^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$`,
+	"alphanum": `^[a-zA-Z0-9]+$`,
+	"alpha":    `^[a-zA-Z]+$`,
+	"numeric":  `^[0-9]+$`,
+}
+
+// validationFormats defines format values for validation rules.
+var validationFormats = map[string]string{
+	"url":  "uri",
+	"uuid": "uuid",
+}
+
+// ConvertToProtobufValidation converts go-playground/validator tags to protobuf validation rules.
 func ConvertToProtobufValidation(validationTag string) map[string]any {
 	rules := ParseValidationTag(validationTag)
 	result := make(map[string]any)
 
 	for _, rule := range rules {
-		switch rule.Name {
-		case protoTagRequired:
-			result["required"] = true
-		case "email":
-			result["pattern"] = `^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$`
-		case "min":
-			if v, err := strconv.ParseFloat(rule.Value, 64); err == nil {
-				result["minimum"] = v
-			}
-		case "max":
-			if v, err := strconv.ParseFloat(rule.Value, 64); err == nil {
-				result["maximum"] = v
-			}
-		case "gte":
-			if v, err := strconv.ParseFloat(rule.Value, 64); err == nil {
-				result["minimum"] = v
-			}
-		case "lte":
-			if v, err := strconv.ParseFloat(rule.Value, 64); err == nil {
-				result["maximum"] = v
-			}
-		case "len":
-			if v, err := strconv.Atoi(rule.Value); err == nil {
-				result["minLength"] = v
-				result["maxLength"] = v
-			}
-		case "url":
-			result["format"] = "uri"
-		case "uuid":
-			result["format"] = "uuid"
-		case "alphanum":
-			result["pattern"] = `^[a-zA-Z0-9]+$`
-		case "alpha":
-			result["pattern"] = `^[a-zA-Z]+$`
-		case "numeric":
-			result["pattern"] = `^[0-9]+$`
-		}
+		applyValidationRule(result, rule)
 	}
 
 	return result
+}
+
+// applyValidationRule applies a single validation rule to the result map.
+func applyValidationRule(result map[string]any, rule ValidationRule) {
+	switch rule.Name {
+	case protoTagRequired:
+		result["required"] = true
+
+	// Numeric validations
+	case "min", "gte":
+		if v, err := strconv.ParseFloat(rule.Value, 64); err == nil {
+			result["minimum"] = v
+		}
+	case "max", "lte":
+		if v, err := strconv.ParseFloat(rule.Value, 64); err == nil {
+			result["maximum"] = v
+		}
+
+	// Length validation
+	case "len":
+		if v, err := strconv.Atoi(rule.Value); err == nil {
+			result["minLength"] = v
+			result["maxLength"] = v
+		}
+
+	// Pattern validations
+	default:
+		if pattern, ok := validationPatterns[rule.Name]; ok {
+			result["pattern"] = pattern
+		} else if format, ok := validationFormats[rule.Name]; ok {
+			result["format"] = format
+		}
+	}
 }

@@ -8,7 +8,7 @@ import (
 )
 
 // TestProto3EditionsCompatibility verifies that proto3 and editions can work together.
-func TestProto3EditionsCompatibility(t *testing.T) { //nolint:gocyclo // This is a comprehensive test suite
+func TestProto3EditionsCompatibility(t *testing.T) {
 	t.Run("Feature parity between proto3 and editions", func(t *testing.T) {
 		// Define a complex type that exercises various features
 		type User struct {

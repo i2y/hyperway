@@ -457,8 +457,8 @@ func (r *responseRecorder) Write(data []byte) (int, error) {
 	return r.body.Write(data)
 }
 
-func (r *responseRecorder) WriteHeader(status int) {
-	r.status = status
+func (r *responseRecorder) WriteHeader(statusCode int) {
+	r.status = statusCode
 }
 
 // isGRPCWeb checks if the request is a gRPC-Web request

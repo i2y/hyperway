@@ -141,7 +141,7 @@ deps-update:
 # Install required tools
 install-tools:
 	@echo "Installing tools..."
-	@$(GOCMD) install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+	@$(GOCMD) install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2
 	@echo "Tools installed successfully"
 
 # Check if all tools are installed

@@ -238,7 +238,7 @@ const (
 
 // Map of RPC codes to gRPC status codes
 var codeToStatusMap = map[Code]string{
-	CodeCanceled:           "CANCELLED",
+	CodeCanceled:           "CANCELED",
 	CodeUnknown:            statusUnknown,
 	CodeInvalidArgument:    "INVALID_ARGUMENT",
 	CodeDeadlineExceeded:   "DEADLINE_EXCEEDED",
@@ -275,7 +275,7 @@ func extractStatusCode(err error) string {
 
 	// Look for common patterns
 	statusCodes := []string{
-		"CANCELLED",
+		"CANCELED",
 		"UNKNOWN",
 		"INVALID_ARGUMENT",
 		"DEADLINE_EXCEEDED",

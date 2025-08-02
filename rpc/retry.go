@@ -105,7 +105,7 @@ func ValidateRetryPolicy(policy *RetryPolicy) error {
 
 	// Validate status codes
 	validStatusCodes := map[string]bool{
-		"CANCELLED":           true,
+		"CANCELED":            true,
 		"UNKNOWN":             true,
 		"INVALID_ARGUMENT":    true,
 		"DEADLINE_EXCEEDED":   true,
