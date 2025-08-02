@@ -10,6 +10,12 @@ import (
 	"github.com/i2y/hyperway/rpc"
 )
 
+// Constants for time values
+const (
+	exampleCreatedAt = 1234567890
+	exampleUpdatedAt = 1234567900
+)
+
 // CreateUserRequest is the request for creating a new user.
 // The struct demonstrates how to add proto documentation using tags.
 type CreateUserRequest struct {
@@ -71,7 +77,7 @@ func CreateUser(ctx context.Context, req *CreateUserRequest) (*CreateUserRespons
 	return &CreateUserResponse{
 		UserID:    "usr_" + req.Username,
 		Username:  req.Username,
-		CreatedAt: 1234567890,
+		CreatedAt: exampleCreatedAt,
 		Status:    "active",
 	}, nil
 }
@@ -84,8 +90,8 @@ func GetUser(ctx context.Context, req *GetUserRequest) (*GetUserResponse, error)
 		Username:  "johndoe",
 		FullName:  "John Doe",
 		Status:    "active",
-		CreatedAt: 1234567890,
-		UpdatedAt: 1234567900,
+		CreatedAt: exampleCreatedAt,
+		UpdatedAt: exampleUpdatedAt,
 	}, nil
 }
 

@@ -51,11 +51,12 @@ func CreateFieldFeatures(parentFeatures *descriptorpb.FeatureSet, fieldCharacter
 	features := protoproto.Clone(parentFeatures).(*descriptorpb.FeatureSet)
 
 	// Override based on field characteristics
-	if fieldCharacteristics.ForceImplicitPresence {
+	switch {
+	case fieldCharacteristics.ForceImplicitPresence:
 		features.FieldPresence = descriptorpb.FeatureSet_IMPLICIT.Enum()
-	} else if fieldCharacteristics.ForceExplicitPresence {
+	case fieldCharacteristics.ForceExplicitPresence:
 		features.FieldPresence = descriptorpb.FeatureSet_EXPLICIT.Enum()
-	} else if fieldCharacteristics.IsRequired {
+	case fieldCharacteristics.IsRequired:
 		features.FieldPresence = descriptorpb.FeatureSet_LEGACY_REQUIRED.Enum()
 	}
 

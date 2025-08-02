@@ -7,6 +7,11 @@ import (
 	"google.golang.org/protobuf/types/descriptorpb"
 )
 
+// Constants
+const (
+	pathInitialCapacity = 10
+)
+
 // CommentInfo holds documentation comments for a proto element.
 type CommentInfo struct {
 	Leading  string   // Comment appearing before the element
@@ -22,7 +27,7 @@ type PathBuilder struct {
 // NewPathBuilder creates a new path builder.
 func NewPathBuilder() *PathBuilder {
 	return &PathBuilder{
-		path: make([]int32, 0, 10), // Pre-allocate for typical path depth
+		path: make([]int32, 0, pathInitialCapacity), // Pre-allocate for typical path depth
 	}
 }
 

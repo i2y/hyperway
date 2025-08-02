@@ -59,7 +59,7 @@ func (e *ErrorWithDetails) AddDetail(detail *ErrorDetail) *ErrorWithDetails {
 
 // AddAnyDetail adds a protobuf Any detail.
 func (e *ErrorWithDetails) AddAnyDetail(msg proto.Message) *ErrorWithDetails {
-	any, err := anypb.New(msg)
+	anyDetail, err := anypb.New(msg)
 	if err != nil {
 		// If we can't create Any, add as regular detail
 		e.details = append(e.details, &ErrorDetail{
@@ -70,14 +70,14 @@ func (e *ErrorWithDetails) AddAnyDetail(msg proto.Message) *ErrorWithDetails {
 	}
 
 	// Extract the type name without the URL prefix for Connect protocol
-	typeName := any.TypeUrl
+	typeName := anyDetail.TypeUrl
 	if idx := strings.LastIndex(typeName, "/"); idx >= 0 {
 		typeName = typeName[idx+1:]
 	}
 
 	e.details = append(e.details, &ErrorDetail{
 		Type:  typeName,
-		Value: any.Value,
+		Value: anyDetail.Value,
 	})
 	return e
 }

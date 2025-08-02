@@ -13,6 +13,9 @@ import (
 	"github.com/i2y/hyperway/internal/proto"
 )
 
+// Default pool size
+const defaultPoolSize = 10
+
 // Decoder handles decoding protobuf format to Go values using hyperpb.
 type Decoder struct {
 	msgType    *hyperpb.MessageType
@@ -159,7 +162,7 @@ func (d *Decoder) Descriptor() protoreflect.MessageDescriptor {
 // DefaultDecoderOptions are the default options for decoders.
 var DefaultDecoderOptions = DecoderOptions{
 	EnablePooling:      true,
-	InitialPoolSize:    10,
+	InitialPoolSize:    defaultPoolSize,
 	AllowUnknownFields: false,
 	EnablePGO:          false,
 }

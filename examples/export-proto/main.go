@@ -13,6 +13,12 @@ import (
 	"github.com/i2y/hyperway/rpc"
 )
 
+// Constants for file permissions
+const (
+	dirPermission  = 0750
+	filePermission = 0600
+)
+
 // Example types
 type User struct {
 	ID       string            `json:"id"`
@@ -54,6 +60,84 @@ func getUser(ctx context.Context, req *GetUserRequest) (*GetUserResponse, error)
 	return &GetUserResponse{User: &User{ID: req.ID, Name: "Example User"}}, nil
 }
 
+func exportSingleFile(svc *rpc.Service, output string) {
+	protoContent, err := svc.ExportProto()
+	if err != nil {
+		log.Fatalf("Failed to export proto: %v", err)
+	}
+
+	if output != "" {
+		// Write to file
+		filename := filepath.Join(output, "service.proto")
+		if err := os.MkdirAll(output, dirPermission); err != nil {
+			log.Fatalf("Failed to create output directory: %v", err)
+		}
+		if err := os.WriteFile(filename, []byte(protoContent), filePermission); err != nil {
+			log.Fatalf("Failed to write proto file: %v", err)
+		}
+		fmt.Printf("Exported proto to %s\n", filename)
+	} else {
+		// Write to stdout
+		fmt.Println(protoContent)
+	}
+}
+
+func exportAsZip(svc *rpc.Service, zipOutput string) {
+	files, err := svc.ExportAllProtos()
+	if err != nil {
+		log.Fatalf("Failed to export protos: %v", err)
+	}
+
+	// Create FileDescriptorSet
+	fdset := svc.GetFileDescriptorSet()
+
+	// Export to ZIP
+	exporter := proto.NewExporter(proto.DefaultExportOptions())
+	zipData, err := exporter.ExportToZip(fdset)
+	if err != nil {
+		log.Fatalf("Failed to create ZIP: %v", err)
+	}
+
+	// Write ZIP file
+	if err := os.WriteFile(zipOutput, zipData, filePermission); err != nil {
+		log.Fatalf("Failed to write ZIP file: %v", err)
+	}
+	fmt.Printf("Exported %d proto files to %s\n", len(files), zipOutput)
+}
+
+func exportAllFiles(svc *rpc.Service, output string) {
+	files, err := svc.ExportAllProtos()
+	if err != nil {
+		log.Fatalf("Failed to export protos: %v", err)
+	}
+
+	if output != "" {
+		// Write to directory
+		if err := os.MkdirAll(output, dirPermission); err != nil {
+			log.Fatalf("Failed to create output directory: %v", err)
+		}
+
+		for filename, content := range files {
+			fullPath := filepath.Join(output, filename)
+			dir := filepath.Dir(fullPath)
+			if err := os.MkdirAll(dir, dirPermission); err != nil {
+				log.Fatalf("Failed to create directory %s: %v", dir, err)
+			}
+			if err := os.WriteFile(fullPath, []byte(content), filePermission); err != nil {
+				log.Fatalf("Failed to write file %s: %v", fullPath, err)
+			}
+			fmt.Printf("Exported %s\n", fullPath)
+		}
+		fmt.Printf("\nExported %d proto files to %s\n", len(files), output)
+	} else {
+		// Write to stdout
+		for filename, content := range files {
+			fmt.Printf("// File: %s\n", filename)
+			fmt.Println(content)
+		}
+	}
+}
+
 func main() {
 	var (
 		output     = flag.String("output", "", "Output directory for proto files (default: stdout)")
@@ -77,82 +161,13 @@ func main() {
 	}
 
 	// Export proto files
-	if *singleFile {
-		// Export as single file
-		protoContent, err := svc.ExportProto()
-		if err != nil {
-			log.Fatalf("Failed to export proto: %v", err)
-		}
-
-		if *output != "" {
-			// Write to file
-			filename := filepath.Join(*output, "service.proto")
-			if err := os.MkdirAll(*output, 0755); err != nil {
-				log.Fatalf("Failed to create output directory: %v", err)
-			}
-			if err := os.WriteFile(filename, []byte(protoContent), 0644); err != nil {
-				log.Fatalf("Failed to write proto file: %v", err)
-			}
-			fmt.Printf("Exported proto to %s\n", filename)
-		} else {
-			// Write to stdout
-			fmt.Println(protoContent)
-		}
-	} else if *zipOutput != "" {
-		// Export as ZIP
-		files, err := svc.ExportAllProtos()
-		if err != nil {
-			log.Fatalf("Failed to export protos: %v", err)
-		}
-
-		// Create FileDescriptorSet
-		fdset := svc.GetFileDescriptorSet()
-
-		// Export to ZIP
-		exporter := proto.NewExporter(proto.DefaultExportOptions())
-		zipData, err := exporter.ExportToZip(fdset)
-		if err != nil {
-			log.Fatalf("Failed to create ZIP: %v", err)
-		}
-
-		// Write ZIP file
-		if err := os.WriteFile(*zipOutput, zipData, 0644); err != nil {
-			log.Fatalf("Failed to write ZIP file: %v", err)
-		}
-		fmt.Printf("Exported %d proto files to %s\n", len(files), *zipOutput)
-	} else {
-		// Export all files
-		files, err := svc.ExportAllProtos()
-		if err != nil {
-			log.Fatalf("Failed to export protos: %v", err)
-		}
-
-		if *output != "" {
-			// Write to directory
-			if err := os.MkdirAll(*output, 0755); err != nil {
-				log.Fatalf("Failed to create output directory: %v", err)
-			}
-
-			for filename, content := range files {
-				fullPath := filepath.Join(*output, filename)
-				dir := filepath.Dir(fullPath)
-				if err := os.MkdirAll(dir, 0755); err != nil {
-					log.Fatalf("Failed to create directory %s: %v", dir, err)
-				}
-				if err := os.WriteFile(fullPath, []byte(content), 0644); err != nil {
-					log.Fatalf("Failed to write file %s: %v", fullPath, err)
-				}
-				fmt.Printf("Exported %s\n", fullPath)
-			}
-			fmt.Printf("\nExported %d proto files to %s\n", len(files), *output)
-		} else {
-			// Write to stdout
-			for filename, content := range files {
-				fmt.Printf("// File: %s\n", filename)
-				fmt.Println(content)
-				fmt.Println()
-			}
-		}
+	switch {
+	case *singleFile:
+		exportSingleFile(svc, *output)
+	case *zipOutput != "":
+		exportAsZip(svc, *zipOutput)
+	default:
+		exportAllFiles(svc, *output)
 	}
 }
 

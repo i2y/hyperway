@@ -239,7 +239,7 @@ func TestRetryThrottling(t *testing.T) {
 		handler := func(ctx context.Context, req any) (any, error) {
 			return nil, &Error{Code: CodeUnavailable}
 		}
-		interceptor.Intercept(context.Background(), "/test.Service/Method", "req", handler)
+		_, _ = interceptor.Intercept(context.Background(), "/test.Service/Method", "req", handler)
 	}
 
 	// Now retries should be throttled
@@ -249,7 +249,7 @@ func TestRetryThrottling(t *testing.T) {
 		return nil, &Error{Code: CodeUnavailable}
 	}
 
-	interceptor.Intercept(context.Background(), "/test.Service/Method", "req", handler)
+	_, _ = interceptor.Intercept(context.Background(), "/test.Service/Method", "req", handler)
 
 	// Without throttling, we'd expect 3 calls (max attempts)
 	// With throttling exhausted, we expect 1 call

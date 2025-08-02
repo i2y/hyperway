@@ -12,6 +12,13 @@ import (
 	"github.com/i2y/hyperway/schema"
 )
 
+// Constants
+const (
+	defaultTimeout  = 30 * time.Second
+	corsMaxAgeHours = 24
+	hoursToSeconds  = 60 * 60
+)
+
 // Gateway wraps HTTP handlers for multi-protocol support.
 type Gateway struct {
 	handler    http.Handler
@@ -223,7 +230,7 @@ func findHandler(handlers map[string]http.Handler, path string) http.Handler {
 func handleGRPCWebRequest(w http.ResponseWriter, r *http.Request, handler http.Handler) {
 	tempMux := http.NewServeMux()
 	tempMux.Handle(r.URL.Path, handler)
-	webHandler := newGRPCWebHandler(tempMux, 30*time.Second)
+	webHandler := newGRPCWebHandler(tempMux, defaultTimeout)
 	webHandler.ServeHTTP(w, r)
 }
 
@@ -353,7 +360,7 @@ func DefaultCORSConfig() *CORSConfig {
 		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
 		AllowedHeaders:   []string{"*"},
 		AllowCredentials: true,
-		MaxAge:           24 * 60 * 60, // 24 hours in seconds
+		MaxAge:           corsMaxAgeHours * hoursToSeconds, // 24 hours in seconds
 	}
 }
 
@@ -375,7 +382,7 @@ func handleUnimplemented(w http.ResponseWriter, r *http.Request) {
 		// Connect protocol
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusNotFound)
-		fmt.Fprintf(w, `{"code":"unimplemented","message":"Method not found"}`)
+		_, _ = fmt.Fprintf(w, `{"code":"unimplemented","message":"Method not found"}`)
 		return
 	}
 

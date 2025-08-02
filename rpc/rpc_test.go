@@ -122,7 +122,7 @@ func TestService_HTTPHandler(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to make request: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
@@ -173,7 +173,7 @@ func TestService_Validation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to make request: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	// Should fail validation
 	if resp.StatusCode == http.StatusOK {
@@ -212,7 +212,7 @@ func TestService_ErrorHandling(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to make request: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	// For Connect protocol, errors are returned with 200 status
 	body, _ := io.ReadAll(resp.Body)
@@ -251,7 +251,7 @@ func TestService_Gateway(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to get OpenAPI spec: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		t.Errorf("Expected status 200 for OpenAPI, got %d", resp.StatusCode)
@@ -299,7 +299,7 @@ func TestService_ConnectProtocol(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to make request: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
@@ -360,7 +360,7 @@ func TestTypedRegistration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to make request: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
@@ -406,7 +406,7 @@ func TestService_MultipleServices(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to make request to user service: %v", err)
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
 		t.Errorf("Expected status 200 for user service, got %d", resp.StatusCode)
@@ -425,7 +425,7 @@ func TestService_MultipleServices(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to make request to admin service: %v", err)
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
 		t.Errorf("Expected status 200 for admin service, got %d", resp.StatusCode)
@@ -473,7 +473,7 @@ func TestConnectTimeoutHeader(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Failed to make request: %v", err)
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		// Should return 200 with error in body (Connect protocol)
 		if resp.StatusCode != http.StatusOK {
@@ -508,7 +508,7 @@ func TestConnectTimeoutHeader(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Failed to make request: %v", err)
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		if resp.StatusCode != http.StatusOK {
 			body, _ := io.ReadAll(resp.Body)
@@ -586,7 +586,7 @@ func TestErrorCodes(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Failed to make request: %v", err)
 			}
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			// Connect protocol returns 200 with error in body
 			if resp.StatusCode != http.StatusOK {
@@ -639,6 +639,6 @@ func BenchmarkService_JSONRequest(b *testing.B) {
 		if err != nil {
 			b.Fatal(err)
 		}
-		resp.Body.Close()
+		_ = resp.Body.Close()
 	}
 }

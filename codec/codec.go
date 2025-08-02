@@ -9,6 +9,11 @@ import (
 	"google.golang.org/protobuf/reflect/protoreflect"
 )
 
+// Constants for buffer and pool sizes
+const (
+	initialBufSize = 10
+)
+
 // Codec provides high-level encoding/decoding operations.
 type Codec struct {
 	encoder       *Encoder
@@ -30,7 +35,7 @@ type Options struct {
 func DefaultOptions() Options {
 	return Options{
 		EnablePooling:      true,
-		PoolSize:           10,
+		PoolSize:           initialBufSize,
 		AllowUnknownFields: false,
 	}
 }

@@ -107,12 +107,12 @@ func TestWellKnownTypesIntegration(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			// Check status
 			if resp.StatusCode != http.StatusOK {
 				body := new(bytes.Buffer)
-				body.ReadFrom(resp.Body)
+				_, _ = body.ReadFrom(resp.Body)
 				t.Fatalf("Expected 200, got %d: %s", resp.StatusCode, body.String())
 			}
 
@@ -201,7 +201,7 @@ func TestWellKnownTypesWithMaps(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	// Check response
 	if resp.StatusCode != http.StatusOK {
@@ -284,7 +284,7 @@ func TestFieldMaskProcessing(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	// Check response
 	if resp.StatusCode != http.StatusOK {

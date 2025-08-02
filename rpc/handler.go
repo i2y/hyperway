@@ -30,6 +30,11 @@ const (
 	handlerContextKey contextKey = "hyperway-handler-context"
 )
 
+// Constants
+const (
+	minTimeoutLength = 2
+)
+
 // Content type constants
 const (
 	contentTypeConnectJSON = "application/connect+json"
@@ -527,13 +532,14 @@ func containsProtobuf(contentType string) bool {
 
 // handleMethodNotAllowed handles non-POST requests.
 func (s *Service) handleMethodNotAllowed(w http.ResponseWriter, r *http.Request, p protocolInfo) {
-	if p.isConnect {
+	switch {
+	case p.isConnect:
 		s.writeConnectError(w, r, NewError(CodeUnimplemented, "Method not allowed"))
-	} else if p.isGRPC {
+	case p.isGRPC:
 		w.Header().Set("grpc-status", fmt.Sprintf("%d", grpcStatusUnimplemented))
 		w.Header().Set("grpc-message", "Method not allowed")
 		w.WriteHeader(http.StatusOK)
-	} else {
+	default:
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 	}
 }
@@ -560,33 +566,33 @@ func parseRequestTimeout(r *http.Request, isConnect bool) context.Context {
 func (s *Service) handleRequest(w http.ResponseWriter, r *http.Request, ctx *handlerContext) {
 	// Setup request context
 	ctx.requestHeaders = r.Header
-	proto := detectProtocol(r)
+	protocolInfo := detectProtocol(r)
 
 	// Validate method
 	if r.Method != http.MethodPost {
-		s.handleMethodNotAllowed(w, r, proto)
+		s.handleMethodNotAllowed(w, r, protocolInfo)
 		return
 	}
 
 	// Route to appropriate handler
 	if ctx.method.StreamType != StreamTypeUnary {
-		s.handleStreamingRequest(w, r, ctx, proto)
+		s.handleStreamingRequest(w, r, ctx, protocolInfo)
 		return
 	}
 
 	// Handle unary request
-	s.handleUnaryRequest(w, r, ctx, proto)
+	s.handleUnaryRequest(w, r, ctx, protocolInfo)
 }
 
 // handleStreamingRequest routes to the appropriate streaming handler
-func (s *Service) handleStreamingRequest(w http.ResponseWriter, r *http.Request, ctx *handlerContext, proto protocolInfo) {
+func (s *Service) handleStreamingRequest(w http.ResponseWriter, r *http.Request, ctx *handlerContext, protocolInfo protocolInfo) {
 	switch ctx.method.StreamType {
 	case StreamTypeServerStream:
-		s.handleServerStreamRequest(w, r, ctx, proto)
+		s.handleServerStreamRequest(w, r, ctx, protocolInfo)
 	case StreamTypeClientStream:
-		s.handleClientStreamRequest(w, r, ctx, proto)
+		s.handleClientStreamRequest(w, r, ctx, protocolInfo)
 	case StreamTypeBidiStream:
-		s.handleBidiStreamRequest(w, r, ctx, proto)
+		s.handleBidiStreamRequest(w, r, ctx, protocolInfo)
 	case StreamTypeUnary:
 		// This should not happen as unary is handled separately
 		panic("unreachable: unary stream type in streaming handler")
@@ -594,9 +600,9 @@ func (s *Service) handleStreamingRequest(w http.ResponseWriter, r *http.Request,
 }
 
 // handleUnaryRequest handles unary RPC requests
-func (s *Service) handleUnaryRequest(w http.ResponseWriter, r *http.Request, ctx *handlerContext, proto protocolInfo) {
+func (s *Service) handleUnaryRequest(w http.ResponseWriter, r *http.Request, ctx *handlerContext, protocolInfo protocolInfo) {
 	// Parse timeout
-	reqCtx := parseRequestTimeout(r, proto.isConnect)
+	reqCtx := parseRequestTimeout(r, protocolInfo.isConnect)
 	if cancel, ok := reqCtx.Value(contextKeyCancel).(context.CancelFunc); ok {
 		defer cancel()
 		// Remove cancel from context to avoid leaking it
@@ -604,17 +610,17 @@ func (s *Service) handleUnaryRequest(w http.ResponseWriter, r *http.Request, ctx
 	}
 
 	// Special handling for gRPC
-	if proto.isGRPC {
+	if protocolInfo.isGRPC {
 		s.handleGRPCRequest(w, r, ctx)
 		return
 	}
 
 	// Process standard unary request
-	s.processUnaryRequest(w, r, ctx, proto, reqCtx)
+	s.processUnaryRequest(w, r, ctx, protocolInfo, reqCtx)
 }
 
 // processUnaryRequest processes a standard unary request
-func (s *Service) processUnaryRequest(w http.ResponseWriter, r *http.Request, ctx *handlerContext, proto protocolInfo, reqCtx context.Context) {
+func (s *Service) processUnaryRequest(w http.ResponseWriter, r *http.Request, ctx *handlerContext, protocolInfo protocolInfo, reqCtx context.Context) {
 	// Read and decompress body
 	body, err := s.readRequestBody(r)
 	if err != nil {
@@ -637,7 +643,7 @@ func (s *Service) processUnaryRequest(w http.ResponseWriter, r *http.Request, ct
 	}
 
 	// Encode and send response
-	if err := s.encodeResponse(w, r, output, ctx, proto.isConnect); err != nil {
+	if err := s.encodeResponse(w, r, output, ctx, protocolInfo.isConnect); err != nil {
 		s.writeError(w, r, err)
 	}
 }
@@ -785,16 +791,17 @@ func (s *Service) decodeProtoInput(contentType string, body []byte, protoInput p
 	// Clone the proto message to get a fresh instance
 	msg := proto.Clone(protoInput)
 
-	if s.isJSONContentType(contentType) {
+	switch {
+	case s.isJSONContentType(contentType):
 		err := s.unmarshalProtoJSON(body, msg)
 		if err != nil {
 			return reflect.Value{}, err
 		}
-	} else if s.isProtobufContentType(contentType) {
+	case s.isProtobufContentType(contentType):
 		if err := proto.Unmarshal(body, msg); err != nil {
 			return reflect.Value{}, NewErrorf(CodeInvalidArgument, "failed to unmarshal protobuf: %v", err)
 		}
-	} else {
+	default:
 		// Handle default case
 		err := s.decodeProtoDefault(contentType, body, msg)
 		if err != nil {
@@ -813,16 +820,17 @@ func (s *Service) decodeStructInput(contentType string, body []byte, ctx *handle
 	}
 	inputVal := ctx.newInputFunc()
 
-	if s.isJSONContentType(contentType) {
+	switch {
+	case s.isJSONContentType(contentType):
 		if err := json.Unmarshal(body, inputVal.Interface()); err != nil {
 			return reflect.Value{}, NewErrorf(CodeInvalidArgument, "failed to unmarshal JSON: %v", err)
 		}
-	} else if s.isProtobufContentType(contentType) {
+	case s.isProtobufContentType(contentType):
 		err := s.decodeProtobufToStruct(body, inputVal, ctx)
 		if err != nil {
 			return reflect.Value{}, err
 		}
-	} else {
+	default:
 		// Handle default case
 		err := s.decodeStructDefault(contentType, body, inputVal, ctx)
 		if err != nil {
@@ -975,9 +983,9 @@ func (s *Service) encodeResponse(w http.ResponseWriter, r *http.Request, output 
 	}
 
 	// Handle trailers
-	proto := detectProtocol(r)
+	protocolInfo := detectProtocol(r)
 	if len(ctx.responseTrailers) > 0 {
-		if proto.isConnect {
+		if protocolInfo.isConnect {
 			// Connect protocol sends trailers as regular headers with "trailer-" prefix
 			for key, values := range ctx.responseTrailers {
 				for _, value := range values {
@@ -1004,7 +1012,7 @@ func (s *Service) encodeResponse(w http.ResponseWriter, r *http.Request, output 
 	}
 
 	// Apply trailers after body is written (for non-Connect protocols)
-	if ctx.responseTrailers != nil && !proto.isConnect {
+	if ctx.responseTrailers != nil && !protocolInfo.isConnect {
 		for key, values := range ctx.responseTrailers {
 			for _, value := range values {
 				w.Header().Add(key, value)
@@ -1381,7 +1389,7 @@ func (s *Service) writeGRPCError(w http.ResponseWriter, err error) {
 
 // parseGRPCTimeout parses gRPC timeout format (e.g., "10S" for 10 seconds).
 func parseGRPCTimeout(timeout string) (time.Duration, error) {
-	if len(timeout) < 2 {
+	if len(timeout) < minTimeoutLength {
 		return 0, fmt.Errorf("invalid timeout format")
 	}
 
@@ -1478,20 +1486,22 @@ func (s *Service) createStreamingHTTPHandler(method *Method) http.HandlerFunc {
 		case StreamTypeUnary:
 			// Should not happen - unary methods have their own handler
 			err := NewError(CodeInternal, "Unary method in streaming handler")
-			if p.isConnect {
+			switch {
+			case p.isConnect:
 				s.writeConnectError(w, r, err)
-			} else if p.isGRPC {
+			case p.isGRPC:
 				s.writeGRPCError(w, err)
-			} else {
+			default:
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 			}
 		default:
 			err := NewError(CodeUnimplemented, "Unknown streaming type")
-			if p.isConnect {
+			switch {
+			case p.isConnect:
 				s.writeConnectError(w, r, err)
-			} else if p.isGRPC {
+			case p.isGRPC:
 				s.writeGRPCError(w, err)
-			} else {
+			default:
 				http.Error(w, err.Error(), http.StatusNotImplemented)
 			}
 		}

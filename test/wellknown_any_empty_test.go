@@ -67,7 +67,7 @@ func TestEmptyType(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("Expected 200, got %d", resp.StatusCode)
@@ -144,11 +144,11 @@ func TestEmptyTag(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		body := new(bytes.Buffer)
-		body.ReadFrom(resp.Body)
+		_, _ = body.ReadFrom(resp.Body)
 		t.Fatalf("Expected 200, got %d: %s", resp.StatusCode, body.String())
 	}
 

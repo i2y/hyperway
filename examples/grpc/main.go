@@ -13,6 +13,16 @@ import (
 	"golang.org/x/net/http2/h2c"
 )
 
+// Constants
+const (
+	defaultLimit      = 10
+	maxLimit          = 100
+	httpReadTimeout   = 30 * time.Second
+	httpWriteTimeout  = 30 * time.Second
+	httpIdleTimeout   = 120 * time.Second
+	httpHeaderTimeout = 5 * time.Second
+)
+
 // Service models
 type User struct {
 	ID        string    `json:"id"`
@@ -90,10 +100,10 @@ func getUser(ctx context.Context, req *GetUserRequest) (*GetUserResponse, error)
 func listUsers(ctx context.Context, req *ListUsersRequest) (*ListUsersResponse, error) {
 	limit := req.Limit
 	if limit <= 0 {
-		limit = 10
+		limit = defaultLimit
 	}
-	if limit > 100 {
-		limit = 100
+	if limit > maxLimit {
+		limit = maxLimit
 	}
 
 	offset := req.Offset
@@ -119,7 +129,7 @@ func listUsers(ctx context.Context, req *ListUsersRequest) (*ListUsersResponse, 
 
 	return &ListUsersResponse{
 		Users: allUsers[start:end],
-		Total: int32(len(allUsers)),
+		Total: int32(len(allUsers)), //nolint:gosec // Safe conversion, allUsers length is controlled
 	}, nil
 }
 
@@ -168,8 +178,12 @@ func main() {
 
 	// Start HTTP/2 server with h2c for gRPC support
 	srv := &http.Server{
-		Addr:    ":9095",
-		Handler: h2c.NewHandler(gateway, &http2.Server{}),
+		Addr:              ":9095",
+		Handler:           h2c.NewHandler(gateway, &http2.Server{}),
+		ReadTimeout:       httpReadTimeout,
+		WriteTimeout:      httpWriteTimeout,
+		IdleTimeout:       httpIdleTimeout,
+		ReadHeaderTimeout: httpHeaderTimeout,
 	}
 
 	// Add some initial data
