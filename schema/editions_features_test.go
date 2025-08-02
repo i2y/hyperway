@@ -7,7 +7,7 @@ import (
 	"google.golang.org/protobuf/types/descriptorpb"
 )
 
-func TestEditionsFeatures(t *testing.T) {
+func TestEditionsFeatures(t *testing.T) { //nolint:gocyclo // This is a comprehensive test suite
 	t.Run("File-level features for Edition 2023", func(t *testing.T) {
 		builder := NewBuilder(BuilderOptions{
 			PackageName: "test.v1",

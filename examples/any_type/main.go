@@ -5,12 +5,20 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"time"
 
 	"github.com/i2y/hyperway/rpc"
 	"google.golang.org/protobuf/types/known/anypb"
 	"google.golang.org/protobuf/types/known/structpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 	"google.golang.org/protobuf/types/known/wrapperspb"
+)
+
+// Constants
+const (
+	httpReadTimeout  = 30 * time.Second
+	httpWriteTimeout = 30 * time.Second
+	httpIdleTimeout  = 120 * time.Second
 )
 
 // AnyTestRequest demonstrates using Any types in requests
@@ -108,7 +116,17 @@ func main() {
 
 	log.Println("Starting Any type test server on :8080")
 	log.Println("Service registered at: /example.anytest.v1.AnyTestService/ProcessAny")
-	if err := http.ListenAndServe(":8080", mux); err != nil {
+
+	// Create server with timeouts
+	server := &http.Server{
+		Addr:         ":8080",
+		Handler:      mux,
+		ReadTimeout:  httpReadTimeout,
+		WriteTimeout: httpWriteTimeout,
+		IdleTimeout:  httpIdleTimeout,
+	}
+
+	if err := server.ListenAndServe(); err != nil {
 		log.Fatal(err)
 	}
 }

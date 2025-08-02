@@ -15,6 +15,15 @@ import (
 	"golang.org/x/net/http2/h2c"
 )
 
+// Constants
+const (
+	pgoRecompileDelay = 30 * time.Second
+	httpReadTimeout   = 30 * time.Second
+	httpWriteTimeout  = 30 * time.Second
+	httpIdleTimeout   = 120 * time.Second
+	httpHeaderTimeout = 5 * time.Second
+)
+
 // ComplexMessage represents a complex message for PGO demonstration
 type ComplexMessage struct {
 	ID        string            `json:"id"`
@@ -70,8 +79,12 @@ func main() {
 	h2s := &http2.Server{}
 	handler := h2c.NewHandler(gateway, h2s)
 	srv := &http.Server{
-		Addr:    ":8090",
-		Handler: handler,
+		Addr:              ":8090",
+		Handler:           handler,
+		ReadTimeout:       httpReadTimeout,
+		WriteTimeout:      httpWriteTimeout,
+		IdleTimeout:       httpIdleTimeout,
+		ReadHeaderTimeout: httpHeaderTimeout,
 	}
 
 	log.Println("PGO Demo server starting on :8090")
@@ -80,7 +93,7 @@ func main() {
 
 	// Schedule PGO recompilation after 30 seconds
 	go func() {
-		time.Sleep(30 * time.Second)
+		time.Sleep(pgoRecompileDelay)
 		log.Println("Recompiling message types with collected profiles...")
 
 		if err := proto.GlobalPGOManager.RecompileAll(); err != nil {

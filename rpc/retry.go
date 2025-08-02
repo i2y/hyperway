@@ -105,7 +105,7 @@ func ValidateRetryPolicy(policy *RetryPolicy) error {
 
 	// Validate status codes
 	validStatusCodes := map[string]bool{
-		"CANCELLED":           true, //nolint:misspell // gRPC uses British spelling
+		"CANCELLED":           true,
 		"UNKNOWN":             true,
 		"INVALID_ARGUMENT":    true,
 		"DEADLINE_EXCEEDED":   true,
@@ -182,19 +182,19 @@ func retryBackoff(policy *RetryPolicy, attempt int) time.Duration {
 	// Parse initial backoff
 	initialBackoff, err := time.ParseDuration(policy.InitialBackoff)
 	if err != nil {
-		initialBackoff = 100 * time.Millisecond // Default
+		initialBackoff = defaultInitialBackoff // Default
 	}
 
 	// Parse max backoff
 	maxBackoff, err := time.ParseDuration(policy.MaxBackoff)
 	if err != nil {
-		maxBackoff = 30 * time.Second // Default
+		maxBackoff = defaultMaxBackoff // Default
 	}
 
 	// Calculate exponential backoff
 	multiplier := policy.BackoffMultiplier
 	if multiplier <= 0 {
-		multiplier = 2.0 // Default
+		multiplier = defaultBackoffMultiplier // Default
 	}
 
 	backoff := float64(initialBackoff) * math.Pow(multiplier, float64(attempt-1))
@@ -205,13 +205,13 @@ func retryBackoff(policy *RetryPolicy, attempt int) time.Duration {
 	}
 
 	// Apply jitter of ±20%
-	jitter := 0.2
+	jitter := backoffJitterFactor
 	jitterRange := backoff * jitter
 
 	// Generate cryptographically secure random number for jitter
 	// We need a random value in range [-jitterRange, +jitterRange]
 	// First get a random value in range [0, 2*jitterRange]
-	maxJitter := int64(2 * jitterRange)
+	maxJitter := int64(jitterMultiplier * jitterRange)
 	if maxJitter <= 0 {
 		return time.Duration(backoff)
 	}
@@ -231,10 +231,16 @@ func retryBackoff(policy *RetryPolicy, attempt int) time.Duration {
 
 // Default retry configuration constants
 const (
-	defaultMaxAttempts          = 3
-	defaultBackoffMultiplier    = 2.0
-	aggressiveMaxAttempts       = 5
-	aggressiveBackoffMultiplier = 1.5
+	defaultMaxAttempts            = 3
+	defaultBackoffMultiplier      = 2.0
+	aggressiveMaxAttempts         = 5
+	aggressiveBackoffMultiplier   = 1.5
+	defaultInitialBackoff         = 100 * time.Millisecond
+	defaultMaxBackoff             = 30 * time.Second
+	defaultRetryThrottleMaxTokens = 100
+	defaultRetryThrottleRatio     = 0.1
+	backoffJitterFactor           = 0.2
+	jitterMultiplier              = 2
 )
 
 // DefaultRetryPolicy returns a sensible default retry policy.

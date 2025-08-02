@@ -6,10 +6,19 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"time"
 
 	"github.com/i2y/hyperway/rpc"
 	"golang.org/x/net/http2"
 	"golang.org/x/net/http2/h2c"
+)
+
+// Constants
+const (
+	httpReadTimeout   = 30 * time.Second
+	httpWriteTimeout  = 30 * time.Second
+	httpIdleTimeout   = 120 * time.Second
+	httpHeaderTimeout = 5 * time.Second
 )
 
 // UserRequest represents a user creation request.
@@ -76,7 +85,16 @@ func main() {
 	fmt.Println("\nServer running on http://localhost:8080")
 	fmt.Println("Try: curl -X POST http://localhost:8080/example.user.v1.UserService/CreateUser -d '{\"name\":\"Alice\",\"email\":\"alice@example.com\",\"age\":30}'")
 
-	if err := http.ListenAndServe(":8080", handler); err != nil {
+	server := &http.Server{
+		Addr:              ":8080",
+		Handler:           handler,
+		ReadTimeout:       httpReadTimeout,
+		WriteTimeout:      httpWriteTimeout,
+		IdleTimeout:       httpIdleTimeout,
+		ReadHeaderTimeout: httpHeaderTimeout,
+	}
+
+	if err := server.ListenAndServe(); err != nil {
 		log.Fatalf("Server failed: %v", err)
 	}
 }

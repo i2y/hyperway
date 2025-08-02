@@ -13,6 +13,12 @@ import (
 	"github.com/i2y/hyperway/rpc"
 )
 
+// Constants for file permissions
+const (
+	dirPermission  = 0750
+	filePermission = 0600
+)
+
 // Example types
 type User struct {
 	ID       string            `json:"id"`
@@ -77,7 +83,8 @@ func main() {
 	}
 
 	// Export proto files
-	if *singleFile {
+	switch {
+	case *singleFile:
 		// Export as single file
 		protoContent, err := svc.ExportProto()
 		if err != nil {
@@ -87,10 +94,10 @@ func main() {
 		if *output != "" {
 			// Write to file
 			filename := filepath.Join(*output, "service.proto")
-			if err := os.MkdirAll(*output, 0755); err != nil {
+			if err := os.MkdirAll(*output, dirPermission); err != nil {
 				log.Fatalf("Failed to create output directory: %v", err)
 			}
-			if err := os.WriteFile(filename, []byte(protoContent), 0644); err != nil {
+			if err := os.WriteFile(filename, []byte(protoContent), filePermission); err != nil {
 				log.Fatalf("Failed to write proto file: %v", err)
 			}
 			fmt.Printf("Exported proto to %s\n", filename)
@@ -98,7 +105,7 @@ func main() {
 			// Write to stdout
 			fmt.Println(protoContent)
 		}
-	} else if *zipOutput != "" {
+	case *zipOutput != "":
 		// Export as ZIP
 		files, err := svc.ExportAllProtos()
 		if err != nil {
@@ -116,11 +123,11 @@ func main() {
 		}
 
 		// Write ZIP file
-		if err := os.WriteFile(*zipOutput, zipData, 0644); err != nil {
+		if err := os.WriteFile(*zipOutput, zipData, filePermission); err != nil {
 			log.Fatalf("Failed to write ZIP file: %v", err)
 		}
 		fmt.Printf("Exported %d proto files to %s\n", len(files), *zipOutput)
-	} else {
+	default:
 		// Export all files
 		files, err := svc.ExportAllProtos()
 		if err != nil {
@@ -129,17 +136,17 @@ func main() {
 
 		if *output != "" {
 			// Write to directory
-			if err := os.MkdirAll(*output, 0755); err != nil {
+			if err := os.MkdirAll(*output, dirPermission); err != nil {
 				log.Fatalf("Failed to create output directory: %v", err)
 			}
 
 			for filename, content := range files {
 				fullPath := filepath.Join(*output, filename)
 				dir := filepath.Dir(fullPath)
-				if err := os.MkdirAll(dir, 0755); err != nil {
+				if err := os.MkdirAll(dir, dirPermission); err != nil {
 					log.Fatalf("Failed to create directory %s: %v", dir, err)
 				}
-				if err := os.WriteFile(fullPath, []byte(content), 0644); err != nil {
+				if err := os.WriteFile(fullPath, []byte(content), filePermission); err != nil {
 					log.Fatalf("Failed to write file %s: %v", fullPath, err)
 				}
 				fmt.Printf("Exported %s\n", fullPath)

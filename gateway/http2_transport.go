@@ -29,6 +29,7 @@ const (
 	defaultMaxReadFrameSize     = 16 * 1024         // 16KB
 	defaultIdleTimeout          = 120 * time.Second // 2 minutes
 	defaultReadHeaderTimeout    = 10 * time.Second  // Slowloris mitigation
+	timeoutMultiplier           = 2
 )
 
 // NewHTTP2Transport creates a new HTTP/2 transport with keepalive support.
@@ -142,11 +143,11 @@ func ConfigureServerWithKeepalive(server *http.Server, keepalive *KeepaliveParam
 
 	if server.ReadTimeout == 0 {
 		// Allow enough time for keepalive
-		server.ReadTimeout = keepalive.Timeout * 2
+		server.ReadTimeout = keepalive.Timeout * timeoutMultiplier
 	}
 
 	if server.WriteTimeout == 0 {
-		server.WriteTimeout = keepalive.Timeout * 2
+		server.WriteTimeout = keepalive.Timeout * timeoutMultiplier
 	}
 }
 

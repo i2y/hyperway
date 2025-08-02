@@ -410,8 +410,6 @@ func (s *Service) GetFileDescriptorSet() *descriptorpb.FileDescriptorSet {
 }
 
 // buildCompleteFileDescriptorSet builds a complete FileDescriptorSet including service definition.
-//
-//nolint:gocyclo // This function orchestrates the complete file descriptor set generation
 func (s *Service) buildCompleteFileDescriptorSet() *descriptorpb.FileDescriptorSet {
 	// Create a single file that contains all message types and the service
 	// This avoids duplicate type definitions across multiple files

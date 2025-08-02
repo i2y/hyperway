@@ -24,6 +24,13 @@ import (
 // ErrSkipField is returned when a field should be skipped during processing.
 var ErrSkipField = errors.New("skip field")
 
+// Constants
+const (
+	mapKeyFieldNumber       = 1
+	mapValueFieldNumber     = 2
+	underscoreOverheadRatio = 10
+)
+
 // title capitalizes the first letter of a string
 func title(s string) string {
 	if s == "" {
@@ -120,7 +127,7 @@ func NewBuilder(opts BuilderOptions) *Builder {
 }
 
 // BuildMessage converts a Go type to a protoreflect.MessageDescriptor.
-func (b *Builder) BuildMessage(rt reflect.Type) (protoreflect.MessageDescriptor, error) { //nolint:gocyclo // Complex type handling requires many conditions
+func (b *Builder) BuildMessage(rt reflect.Type) (protoreflect.MessageDescriptor, error) {
 	b.mu.RLock()
 	if md, ok := b.cache[rt]; ok {
 		b.mu.RUnlock()
@@ -697,7 +704,7 @@ func (b *Builder) buildMapField(
 	}
 	keyField := &descriptorpb.FieldDescriptorProto{
 		Name:   proto("key"),
-		Number: proto(int32(1)),
+		Number: proto(int32(mapKeyFieldNumber)),
 		Label:  labelPtr(descriptorpb.FieldDescriptorProto_LABEL_OPTIONAL),
 		Type:   typePtr(keyFieldType),
 	}
@@ -710,7 +717,7 @@ func (b *Builder) buildMapField(
 	}
 	valueField := &descriptorpb.FieldDescriptorProto{
 		Name:   proto("value"),
-		Number: proto(int32(2)),
+		Number: proto(int32(mapValueFieldNumber)),
 		Label:  labelPtr(descriptorpb.FieldDescriptorProto_LABEL_OPTIONAL),
 		Type:   typePtr(valueFieldType),
 	}

@@ -9,6 +9,12 @@ import (
 	"google.golang.org/protobuf/types/descriptorpb"
 )
 
+// Constants
+const (
+	pipeSeparator   = "|"
+	validationParts = 2
+)
+
 // ValidationRule represents a validation rule that can be converted to protobuf options.
 type ValidationRule struct {
 	Name  string
@@ -134,8 +140,8 @@ func AddValidationMetadata(field *descriptorpb.FieldDescriptorProto, validationT
 
 // ExtractValidationFromJSONName extracts the original name and validation from JsonName.
 func ExtractValidationFromJSONName(jsonName string) (name, validation string) {
-	parts := strings.SplitN(jsonName, "|", 2)
-	if len(parts) == 2 {
+	parts := strings.SplitN(jsonName, pipeSeparator, validationParts)
+	if len(parts) == validationParts {
 		return parts[0], parts[1]
 	}
 	return jsonName, ""
@@ -143,7 +149,7 @@ func ExtractValidationFromJSONName(jsonName string) (name, validation string) {
 
 // ConvertToProtobufValidation converts Go validation tags to protobuf-compatible validation.
 // This is a simplified version - in production, you'd want to use proper protobuf extensions.
-func ConvertToProtobufValidation(validationTag string) map[string]any { //nolint:gocyclo // Complex validation logic requires many cases
+func ConvertToProtobufValidation(validationTag string) map[string]any {
 	rules := ParseValidationTag(validationTag)
 	result := make(map[string]any)
 

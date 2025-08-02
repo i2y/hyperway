@@ -9,7 +9,7 @@ import (
 	"github.com/i2y/hyperway/schema"
 )
 
-func TestServiceWithEditions(t *testing.T) {
+func TestServiceWithEditions(t *testing.T) { //nolint:gocyclo // This is a comprehensive test suite
 	t.Run("Proto3 service (default)", func(t *testing.T) {
 		svc := NewService("TestService")
 

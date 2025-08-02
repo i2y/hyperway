@@ -151,17 +151,18 @@ func getFieldTypeSchema(field *descriptorpb.FieldDescriptorProto) map[string]any
 		typeName = strings.TrimPrefix(typeName, ".")
 
 		// Handle well-known types
-		if typeName == "google.protobuf.Timestamp" {
+		switch typeName {
+		case "google.protobuf.Timestamp":
 			return map[string]any{
 				"type":   "string",
 				"format": "date-time",
 			}
-		} else if typeName == "google.protobuf.Duration" {
+		case "google.protobuf.Duration":
 			return map[string]any{
 				"type":   "string",
 				"format": "duration",
 			}
-		} else if typeName == "google.protobuf.Empty" {
+		case "google.protobuf.Empty":
 			return map[string]any{
 				"type": "object",
 			}

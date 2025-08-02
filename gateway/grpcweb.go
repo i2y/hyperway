@@ -15,6 +15,11 @@ import (
 	"google.golang.org/grpc/status"
 )
 
+// Constants
+const (
+	defaultRequestTimeout = 30 * time.Second
+)
+
 // HTTP header constants
 const (
 	headerContentType = "content-type"
@@ -31,7 +36,7 @@ type grpcWebHandler struct {
 // newGRPCWebHandler creates a new gRPC-Web handler
 func newGRPCWebHandler(grpcHandler http.Handler, timeout time.Duration) *grpcWebHandler {
 	if timeout == 0 {
-		timeout = 30 * time.Second
+		timeout = defaultRequestTimeout
 	}
 	return &grpcWebHandler{
 		grpcHandler: grpcHandler,

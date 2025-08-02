@@ -1,3 +1,5 @@
+version: "2"
+
 run:
   timeout: 5m
   tests: true
@@ -13,12 +15,9 @@ linters:
     - exhaustive
     - goconst
     - gocritic
-    - gofmt
-    - goimports
     - mnd
     - gocyclo
     - gosec
-    - gosimple
     - govet
     - ineffassign
     - misspell
@@ -26,8 +25,6 @@ linters:
     - noctx
     - nolintlint
     - staticcheck
-    - stylecheck
-    - typecheck
     - unconvert
     - unparam
     - unused
@@ -100,6 +97,12 @@ linters-settings:
       - whyNoLint
       - wrapperFunc
   
+formatters:
+  enable:
+    - gofmt
+    - goimports
+
+formatters-settings:
   goimports:
     local-prefixes: github.com/i2y/hyperway
 
@@ -112,7 +115,7 @@ issues:
         - errcheck
         - dupl
         - gosec
-        - gomnd
+        - mnd
 
     # Exclude example files
     - path: examples/

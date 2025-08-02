@@ -9,6 +9,12 @@ import (
 	"time"
 )
 
+// Constants
+const (
+	methodPartsCount          = 3
+	throttleInitialTokenRatio = 2
+)
+
 // RetryInterceptor implements retry logic according to gRPC specification.
 type RetryInterceptor struct {
 	serviceConfig *ServiceConfig
@@ -33,7 +39,7 @@ func NewRetryInterceptor(config *ServiceConfig) *RetryInterceptor {
 	if config != nil && config.RetryThrottling != nil {
 		interceptor.throttle = &retryThrottle{
 			maxTokens:  float64(config.RetryThrottling.MaxTokens),
-			tokens:     float64(config.RetryThrottling.MaxTokens) / 2, // Start at half capacity
+			tokens:     float64(config.RetryThrottling.MaxTokens) / throttleInitialTokenRatio, // Start at half capacity
 			tokenRatio: config.RetryThrottling.TokenRatio,
 		}
 	}
@@ -134,7 +140,7 @@ func (r *RetryInterceptor) findRetryPolicy(method string) *RetryPolicy {
 
 	// Method format: /package.Service/Method
 	parts := strings.Split(method, "/")
-	if len(parts) != 3 {
+	if len(parts) != methodPartsCount {
 		return nil
 	}
 
@@ -232,7 +238,7 @@ const (
 
 // Map of RPC codes to gRPC status codes
 var codeToStatusMap = map[Code]string{
-	CodeCanceled:           "CANCELLED", //nolint:misspell // gRPC uses British spelling
+	CodeCanceled:           "CANCELLED",
 	CodeUnknown:            statusUnknown,
 	CodeInvalidArgument:    "INVALID_ARGUMENT",
 	CodeDeadlineExceeded:   "DEADLINE_EXCEEDED",
@@ -269,7 +275,7 @@ func extractStatusCode(err error) string {
 
 	// Look for common patterns
 	statusCodes := []string{
-		"CANCELLED", //nolint:misspell // gRPC uses British spelling
+		"CANCELLED",
 		"UNKNOWN",
 		"INVALID_ARGUMENT",
 		"DEADLINE_EXCEEDED",

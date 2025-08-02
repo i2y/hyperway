@@ -7,7 +7,7 @@ import (
 	"google.golang.org/protobuf/types/descriptorpb"
 )
 
-func TestEditionsIntegration(t *testing.T) {
+func TestEditionsIntegration(t *testing.T) { //nolint:gocyclo // This is a comprehensive test suite
 	t.Run("Editions with custom features and defaults", func(t *testing.T) {
 		builder := NewBuilder(BuilderOptions{
 			PackageName: "test.editions.v1",
