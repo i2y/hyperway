@@ -14,52 +14,70 @@ func (s *Service) validateStreamingHandler(method *Method) error {
 
 	switch method.StreamType {
 	case StreamTypeUnary:
-		// Expected: func(context.Context, *Input) (*Output, error)
-		if handlerType.NumIn() != 2 || handlerType.NumOut() != 2 {
-			return fmt.Errorf("unary handler must have signature func(context.Context, *Input) (*Output, error)")
-		}
-		// Extract types if not provided
-		if method.InputType == nil {
-			method.InputType = handlerType.In(1).Elem()
-		}
-		if method.OutputType == nil {
-			method.OutputType = handlerType.Out(0).Elem()
-		}
-
+		return s.validateUnaryHandler(method, handlerType)
 	case StreamTypeServerStream:
-		// Expected: func(context.Context, *Input, ServerStream[Output]) error
-		if handlerType.NumIn() != 3 || handlerType.NumOut() != 1 {
-			return fmt.Errorf("server stream handler must have signature func(context.Context, *Input, ServerStream[Output]) error")
-		}
-		// For server streaming, we need to extract types differently
-		// Input type is the second parameter
-		if method.InputType == nil {
-			method.InputType = handlerType.In(1).Elem()
-		}
-		// Output type needs to be set from the method builder
-
+		return s.validateServerStreamHandler(method, handlerType)
 	case StreamTypeClientStream:
-		// Expected: func(context.Context, ClientStream[Input]) (*Output, error)
-		if handlerType.NumIn() != 2 || handlerType.NumOut() != 2 {
-			return fmt.Errorf("client stream handler must have signature func(context.Context, ClientStream[Input]) (*Output, error)")
-		}
-		// For client streaming, output type is in the return
-		if method.OutputType == nil {
-			method.OutputType = handlerType.Out(0).Elem()
-		}
-		// Input type needs to be set from the method builder
-
+		return s.validateClientStreamHandler(method, handlerType)
 	case StreamTypeBidiStream:
-		// Expected: func(context.Context, BidiStream[Input, Output]) error
-		if handlerType.NumIn() != 2 || handlerType.NumOut() != 1 {
-			return fmt.Errorf("bidi stream handler must have signature func(context.Context, BidiStream[Input, Output]) error")
-		}
-		// Both types need to be set from the method builder
-
+		return s.validateBidiStreamHandler(method, handlerType)
 	default:
 		return fmt.Errorf("unknown stream type: %v", method.StreamType)
 	}
+}
 
+// validateUnaryHandler validates unary RPC handler signature
+func (s *Service) validateUnaryHandler(method *Method, handlerType reflect.Type) error {
+	// Expected: func(context.Context, *Input) (*Output, error)
+	if handlerType.NumIn() != 2 || handlerType.NumOut() != 2 {
+		return fmt.Errorf("unary handler must have signature func(context.Context, *Input) (*Output, error)")
+	}
+	// Extract types if not provided
+	if method.InputType == nil {
+		method.InputType = handlerType.In(1).Elem()
+	}
+	if method.OutputType == nil {
+		method.OutputType = handlerType.Out(0).Elem()
+	}
+	return nil
+}
+
+// validateServerStreamHandler validates server streaming RPC handler signature
+func (s *Service) validateServerStreamHandler(method *Method, handlerType reflect.Type) error {
+	// Expected: func(context.Context, *Input, ServerStream[Output]) error
+	if handlerType.NumIn() != 3 || handlerType.NumOut() != 1 {
+		return fmt.Errorf("server stream handler must have signature func(context.Context, *Input, ServerStream[Output]) error")
+	}
+	// For server streaming, we need to extract types differently
+	// Input type is the second parameter
+	if method.InputType == nil {
+		method.InputType = handlerType.In(1).Elem()
+	}
+	// Output type needs to be set from the method builder
+	return nil
+}
+
+// validateClientStreamHandler validates client streaming RPC handler signature
+func (s *Service) validateClientStreamHandler(method *Method, handlerType reflect.Type) error {
+	// Expected: func(context.Context, ClientStream[Input]) (*Output, error)
+	if handlerType.NumIn() != 2 || handlerType.NumOut() != 2 {
+		return fmt.Errorf("client stream handler must have signature func(context.Context, ClientStream[Input]) (*Output, error)")
+	}
+	// For client streaming, output type is in the return
+	if method.OutputType == nil {
+		method.OutputType = handlerType.Out(0).Elem()
+	}
+	// Input type needs to be set from the method builder
+	return nil
+}
+
+// validateBidiStreamHandler validates bidirectional streaming RPC handler signature
+func (s *Service) validateBidiStreamHandler(_ *Method, handlerType reflect.Type) error {
+	// Expected: func(context.Context, BidiStream[Input, Output]) error
+	if handlerType.NumIn() != 2 || handlerType.NumOut() != 1 {
+		return fmt.Errorf("bidi stream handler must have signature func(context.Context, BidiStream[Input, Output]) error")
+	}
+	// Both types need to be set from the method builder
 	return nil
 }
 
