@@ -96,9 +96,6 @@ linters:
         - octalLiteral
         - whyNoLint
         - wrapperFunc
-    
-    goimports:
-      local-prefixes: github.com/i2y/hyperway
 
   exclusions:
     rules:
