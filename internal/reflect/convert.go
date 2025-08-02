@@ -125,67 +125,90 @@ func structToProtoDirect(src reflect.Value, msg protoreflect.Message) error {
 func setFieldValue(field reflect.Value, protoValue protoreflect.Value, fd protoreflect.FieldDescriptor) error {
 	// Handle repeated fields
 	if fd.Cardinality() == protoreflect.Repeated {
-		// Check if the field is a slice
-		if field.Kind() != reflect.Slice {
-			return fmt.Errorf("repeated field %s requires slice type in struct, got %v", fd.Name(), field.Kind())
-		}
-
-		// Get the list
-		list := protoValue.List()
-
-		// Create a new slice with the appropriate length
-		sliceType := field.Type()
-		elemType := sliceType.Elem()
-		newSlice := reflect.MakeSlice(sliceType, list.Len(), list.Len())
-
-		// Process each element
-		for i := 0; i < list.Len(); i++ {
-			elem := newSlice.Index(i)
-			listValue := list.Get(i)
-
-			switch fd.Kind() { //nolint:exhaustive
-			case protoreflect.BoolKind:
-				elem.SetBool(listValue.Bool())
-			case protoreflect.Int32Kind, protoreflect.Sint32Kind, protoreflect.Sfixed32Kind:
-				elem.SetInt(listValue.Int())
-			case protoreflect.Int64Kind, protoreflect.Sint64Kind, protoreflect.Sfixed64Kind:
-				elem.SetInt(listValue.Int())
-			case protoreflect.Uint32Kind, protoreflect.Fixed32Kind:
-				elem.SetUint(listValue.Uint())
-			case protoreflect.Uint64Kind, protoreflect.Fixed64Kind:
-				elem.SetUint(listValue.Uint())
-			case protoreflect.FloatKind:
-				elem.SetFloat(float64(listValue.Float()))
-			case protoreflect.DoubleKind:
-				elem.SetFloat(listValue.Float())
-			case protoreflect.StringKind:
-				elem.SetString(listValue.String())
-			case protoreflect.BytesKind:
-				elem.SetBytes(listValue.Bytes())
-			case protoreflect.MessageKind:
-				// For message types, need to handle pointers
-				if elemType.Kind() == reflect.Ptr {
-					// Create new pointer element
-					newElem := reflect.New(elemType.Elem())
-					if err := protoToStructDirect(listValue.Message(), newElem.Elem()); err != nil {
-						return fmt.Errorf("failed to convert repeated message element %d: %w", i, err)
-					}
-					elem.Set(newElem)
-				} else if elemType.Kind() == reflect.Struct {
-					if err := protoToStructDirect(listValue.Message(), elem); err != nil {
-						return fmt.Errorf("failed to convert repeated message element %d: %w", i, err)
-					}
-				}
-			default:
-				return fmt.Errorf("unsupported repeated field kind: %v", fd.Kind())
-			}
-		}
-
-		field.Set(newSlice)
-		return nil
+		return setRepeatedFieldValue(field, protoValue, fd)
 	}
 
 	// Handle non-repeated fields
+	return setSingleFieldValue(field, protoValue, fd)
+}
+
+// setRepeatedFieldValue handles repeated field values
+func setRepeatedFieldValue(field reflect.Value, protoValue protoreflect.Value, fd protoreflect.FieldDescriptor) error {
+	// Check if the field is a slice
+	if field.Kind() != reflect.Slice {
+		return fmt.Errorf("repeated field %s requires slice type in struct, got %v", fd.Name(), field.Kind())
+	}
+
+	// Get the list
+	list := protoValue.List()
+
+	// Create a new slice with the appropriate length
+	sliceType := field.Type()
+	elemType := sliceType.Elem()
+	newSlice := reflect.MakeSlice(sliceType, list.Len(), list.Len())
+
+	// Process each element
+	for i := 0; i < list.Len(); i++ {
+		elem := newSlice.Index(i)
+		listValue := list.Get(i)
+
+		if err := setListElementValue(elem, listValue, fd, elemType, i); err != nil {
+			return err
+		}
+	}
+
+	field.Set(newSlice)
+	return nil
+}
+
+// setListElementValue sets a single element value in a list
+func setListElementValue(elem reflect.Value, listValue protoreflect.Value, fd protoreflect.FieldDescriptor, elemType reflect.Type, index int) error {
+	switch fd.Kind() { //nolint:exhaustive
+	case protoreflect.BoolKind:
+		elem.SetBool(listValue.Bool())
+	case protoreflect.Int32Kind, protoreflect.Sint32Kind, protoreflect.Sfixed32Kind:
+		elem.SetInt(listValue.Int())
+	case protoreflect.Int64Kind, protoreflect.Sint64Kind, protoreflect.Sfixed64Kind:
+		elem.SetInt(listValue.Int())
+	case protoreflect.Uint32Kind, protoreflect.Fixed32Kind:
+		elem.SetUint(listValue.Uint())
+	case protoreflect.Uint64Kind, protoreflect.Fixed64Kind:
+		elem.SetUint(listValue.Uint())
+	case protoreflect.FloatKind:
+		elem.SetFloat(float64(listValue.Float()))
+	case protoreflect.DoubleKind:
+		elem.SetFloat(listValue.Float())
+	case protoreflect.StringKind:
+		elem.SetString(listValue.String())
+	case protoreflect.BytesKind:
+		elem.SetBytes(listValue.Bytes())
+	case protoreflect.MessageKind:
+		return setMessageListElement(elem, listValue, elemType, index)
+	default:
+		return fmt.Errorf("unsupported repeated field kind: %v", fd.Kind())
+	}
+	return nil
+}
+
+// setMessageListElement handles message type elements in a list
+func setMessageListElement(elem reflect.Value, listValue protoreflect.Value, elemType reflect.Type, index int) error {
+	if elemType.Kind() == reflect.Ptr {
+		// Create new pointer element
+		newElem := reflect.New(elemType.Elem())
+		if err := protoToStructDirect(listValue.Message(), newElem.Elem()); err != nil {
+			return fmt.Errorf("failed to convert repeated message element %d: %w", index, err)
+		}
+		elem.Set(newElem)
+	} else if elemType.Kind() == reflect.Struct {
+		if err := protoToStructDirect(listValue.Message(), elem); err != nil {
+			return fmt.Errorf("failed to convert repeated message element %d: %w", index, err)
+		}
+	}
+	return nil
+}
+
+// setSingleFieldValue handles non-repeated field values
+func setSingleFieldValue(field reflect.Value, protoValue protoreflect.Value, fd protoreflect.FieldDescriptor) error {
 	switch fd.Kind() { //nolint:exhaustive // EnumKind and GroupKind are not needed
 	case protoreflect.BoolKind:
 		field.SetBool(protoValue.Bool())
@@ -206,22 +229,28 @@ func setFieldValue(field reflect.Value, protoValue protoreflect.Value, fd protor
 	case protoreflect.BytesKind:
 		field.SetBytes(protoValue.Bytes())
 	case protoreflect.MessageKind:
-		// Handle well-known types
-		if err := handleWellKnownProtoToStruct(field, protoValue.Message(), fd); err == nil {
-			return nil
-		}
-
-		// For nested messages, recursively convert
-		if field.Kind() == reflect.Ptr {
-			if field.IsNil() {
-				field.Set(reflect.New(field.Type().Elem()))
-			}
-			return protoToStructDirect(protoValue.Message(), field.Elem())
-		} else if field.Kind() == reflect.Struct {
-			return protoToStructDirect(protoValue.Message(), field)
-		}
+		return setMessageFieldValue(field, protoValue, fd)
 	default:
 		return fmt.Errorf("unsupported field kind: %v", fd.Kind())
+	}
+	return nil
+}
+
+// setMessageFieldValue handles message type field values
+func setMessageFieldValue(field reflect.Value, protoValue protoreflect.Value, fd protoreflect.FieldDescriptor) error {
+	// Handle well-known types
+	if err := handleWellKnownProtoToStruct(field, protoValue.Message(), fd); err == nil {
+		return nil
+	}
+
+	// For nested messages, recursively convert
+	if field.Kind() == reflect.Ptr {
+		if field.IsNil() {
+			field.Set(reflect.New(field.Type().Elem()))
+		}
+		return protoToStructDirect(protoValue.Message(), field.Elem())
+	} else if field.Kind() == reflect.Struct {
+		return protoToStructDirect(protoValue.Message(), field)
 	}
 	return nil
 }

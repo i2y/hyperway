@@ -41,7 +41,6 @@ func newGRPCWebHandler(grpcHandler http.Handler, timeout time.Duration) *grpcWeb
 
 // ServeHTTP implements http.Handler for gRPC-Web
 func (h *grpcWebHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-
 	// Validate method
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -54,8 +53,6 @@ func (h *grpcWebHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Set response content type
 	w.Header().Set("Content-Type", codec.contentType())
 
-	// Don't write status code here - let the handler decide
-
 	// Create frame reader and writer
 	frameReader := newGRPCWebFrameReader(r.Body, codec.mode)
 	frameWriter := newGRPCWebFrameWriter(w, codec.mode)
@@ -63,6 +60,12 @@ func (h *grpcWebHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		_ = frameWriter.close()
 	}()
 
+	// Process the request
+	h.processRequest(w, r, frameReader, frameWriter, codec)
+}
+
+// processRequest handles the main request processing logic
+func (h *grpcWebHandler) processRequest(w http.ResponseWriter, r *http.Request, frameReader *grpcWebFrameReader, frameWriter *grpcWebFrameWriter, codec *grpcWebCodec) {
 	// Read the request message
 	requestData, err := h.readRequestMessage(frameReader)
 	if err != nil {
@@ -83,6 +86,12 @@ func (h *grpcWebHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Call the underlying gRPC handler
 	h.grpcHandler.ServeHTTP(recorder, grpcReq)
 
+	// Handle the response
+	h.handleResponse(w, frameWriter, recorder, codec)
+}
+
+// handleResponse processes the response from the gRPC handler
+func (h *grpcWebHandler) handleResponse(w http.ResponseWriter, frameWriter *grpcWebFrameWriter, recorder *responseRecorder, codec *grpcWebCodec) {
 	// Ensure we write 200 OK for gRPC-Web
 	if recorder.status == 0 {
 		recorder.status = http.StatusOK
@@ -90,83 +99,20 @@ func (h *grpcWebHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	// Check if the handler returned 404 (not found)
 	if recorder.status == http.StatusNotFound {
-		// Convert to gRPC-Web unimplemented error
 		h.writeUnimplementedError(frameWriter)
 		return
 	}
 
 	// Check if the handler returned an error via grpc-status header
 	if grpcStatus := recorder.Header().Get("grpc-status"); grpcStatus != "" && grpcStatus != "0" {
-		// This is an error response - handle it specially
 		h.writeResponseWithError(frameWriter, recorder)
 		return
 	}
 
 	// For JSON responses, check if the body contains an error
 	if codec.isJSON && recorder.body.Len() > 0 {
-		// Try to detect Connect-style JSON error response
-		bodyBytes := recorder.body.Bytes()
-		if bytes.Contains(bodyBytes, []byte(`"error"`)) || bytes.Contains(bodyBytes, []byte(`"code"`)) {
-			// This looks like an error response - convert to gRPC-Web error
-			var errorResp struct {
-				Error   string `json:"error"`
-				Code    string `json:"code"`
-				Message string `json:"message"`
-			}
-			if err := json.Unmarshal(bodyBytes, &errorResp); err == nil && (errorResp.Error != "" || errorResp.Code != "") {
-				// Convert to gRPC-Web error
-				code := codes.Unknown
-				message := errorResp.Error
-				if message == "" {
-					message = errorResp.Message
-				}
-
-				// Try to parse code
-				switch errorResp.Code {
-				case "canceled":
-					code = codes.Canceled
-				case "unknown":
-					code = codes.Unknown
-				case "invalid_argument":
-					code = codes.InvalidArgument
-				case "deadline_exceeded":
-					code = codes.DeadlineExceeded
-				case "not_found":
-					code = codes.NotFound
-				case "already_exists":
-					code = codes.AlreadyExists
-				case "permission_denied":
-					code = codes.PermissionDenied
-				case "resource_exhausted":
-					code = codes.ResourceExhausted
-				case "failed_precondition":
-					code = codes.FailedPrecondition
-				case "aborted":
-					code = codes.Aborted
-				case "out_of_range":
-					code = codes.OutOfRange
-				case "unimplemented":
-					code = codes.Unimplemented
-				case "internal":
-					code = codes.Internal
-				case "unavailable":
-					code = codes.Unavailable
-				case "data_loss":
-					code = codes.DataLoss
-				case "unauthenticated":
-					code = codes.Unauthenticated
-				default:
-					// If there's no code but we have an error message, try to infer from message
-					if errorResp.Code == "" && message != "" {
-						if strings.Contains(strings.ToLower(message), "unimplemented") {
-							code = codes.Unimplemented
-						}
-					}
-				}
-
-				h.writeErrorStatus(frameWriter, code, message)
-				return
-			}
+		if h.handleJSONError(frameWriter, recorder.body.Bytes()) {
+			return
 		}
 	}
 
@@ -184,6 +130,74 @@ func (h *grpcWebHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if flusher, ok := w.(http.Flusher); ok {
 		flusher.Flush()
 	}
+}
+
+// handleJSONError checks for and handles JSON error responses
+func (h *grpcWebHandler) handleJSONError(frameWriter *grpcWebFrameWriter, bodyBytes []byte) bool {
+	// Try to detect Connect-style JSON error response
+	if !bytes.Contains(bodyBytes, []byte(`"error"`)) && !bytes.Contains(bodyBytes, []byte(`"code"`)) {
+		return false
+	}
+
+	var errorResp struct {
+		Error   string `json:"error"`
+		Code    string `json:"code"`
+		Message string `json:"message"`
+	}
+
+	if err := json.Unmarshal(bodyBytes, &errorResp); err != nil || (errorResp.Error == "" && errorResp.Code == "") {
+		return false
+	}
+
+	// Convert to gRPC-Web error
+	code := h.parseErrorCode(errorResp.Code, errorResp.Error, errorResp.Message)
+	message := errorResp.Error
+	if message == "" {
+		message = errorResp.Message
+	}
+
+	h.writeErrorStatus(frameWriter, code, message)
+	return true
+}
+
+// parseErrorCode converts string error codes to gRPC codes
+func (h *grpcWebHandler) parseErrorCode(codeStr, errorMsg, message string) codes.Code {
+	if code, ok := stringToGRPCCode[codeStr]; ok {
+		return code
+	}
+
+	// If there's no code but we have an error message, try to infer from message
+	if codeStr == "" && (errorMsg != "" || message != "") {
+		msg := errorMsg
+		if msg == "" {
+			msg = message
+		}
+		if strings.Contains(strings.ToLower(msg), "unimplemented") {
+			return codes.Unimplemented
+		}
+	}
+
+	return codes.Unknown
+}
+
+// stringToGRPCCode maps string codes to gRPC codes
+var stringToGRPCCode = map[string]codes.Code{
+	"canceled":            codes.Canceled,
+	"unknown":             codes.Unknown,
+	"invalid_argument":    codes.InvalidArgument,
+	"deadline_exceeded":   codes.DeadlineExceeded,
+	"not_found":           codes.NotFound,
+	"already_exists":      codes.AlreadyExists,
+	"permission_denied":   codes.PermissionDenied,
+	"resource_exhausted":  codes.ResourceExhausted,
+	"failed_precondition": codes.FailedPrecondition,
+	"aborted":             codes.Aborted,
+	"out_of_range":        codes.OutOfRange,
+	"unimplemented":       codes.Unimplemented,
+	"internal":            codes.Internal,
+	"unavailable":         codes.Unavailable,
+	"data_loss":           codes.DataLoss,
+	"unauthenticated":     codes.Unauthenticated,
 }
 
 // readRequestMessage reads the request message from gRPC-Web frames
@@ -264,17 +278,38 @@ func (h *grpcWebHandler) writeResponse(writer *grpcWebFrameWriter, recorder *res
 		return err
 	}
 
-	// Prepare trailers
+	// Prepare and write trailers
+	trailers := h.prepareTrailers(recorder)
+	trailerData := formatTrailerFrame(trailers)
+	return writer.writeTrailerFrame(trailerData)
+}
+
+// prepareTrailers prepares the trailer headers from the response recorder
+func (h *grpcWebHandler) prepareTrailers(recorder *responseRecorder) http.Header {
 	trailers := make(http.Header)
 
-	// Add gRPC status
-	statusCode := codes.OK
-	statusMsg := ""
+	// Extract and set gRPC status
+	statusCode, statusMsg := h.extractGRPCStatus(recorder)
+	trailers.Set("grpc-status", strconv.Itoa(int(statusCode)))
+	if statusMsg != "" {
+		trailers.Set("grpc-message", statusMsg)
+	}
+
+	// Copy headers to trailers
+	h.copyHeadersToTrailers(recorder.Header(), trailers)
+
+	return trailers
+}
+
+// extractGRPCStatus extracts gRPC status code and message from response headers
+func (h *grpcWebHandler) extractGRPCStatus(recorder *responseRecorder) (statusCode codes.Code, statusMsg string) {
+	statusCode = codes.OK
+	statusMsg = ""
 
 	// Check if there's a grpc-status header
 	if grpcStatus := recorder.Header().Get("grpc-status"); grpcStatus != "" {
 		if code, err := strconv.Atoi(grpcStatus); err == nil && code >= 0 && code <= 16 {
-			statusCode = codes.Code(code) //nolint:gosec // code range is validated above //nolint:gosec // code range is validated above
+			statusCode = codes.Code(code) //nolint:gosec // code range is validated above
 		}
 	}
 
@@ -282,41 +317,54 @@ func (h *grpcWebHandler) writeResponse(writer *grpcWebFrameWriter, recorder *res
 		statusMsg = grpcMessage
 	}
 
-	// Set status in trailers
-	trailers.Set("grpc-status", strconv.Itoa(int(statusCode)))
-	if statusMsg != "" {
-		trailers.Set("grpc-message", statusMsg)
-	}
+	return statusCode, statusMsg
+}
 
-	// Copy any other trailer headers
-	for key, values := range recorder.Header() {
-		if strings.HasPrefix(strings.ToLower(key), "grpc-") &&
-			key != "grpc-status" && key != "grpc-message" {
+// copyHeadersToTrailers copies appropriate headers to trailers
+func (h *grpcWebHandler) copyHeadersToTrailers(headers, trailers http.Header) {
+	// Copy grpc-prefixed headers (except status and message)
+	for key, values := range headers {
+		if h.shouldCopyAsGRPCTrailer(key) {
 			trailers[key] = values
 		}
 	}
 
-	// Also copy response headers/trailers from recorder
-	for key, values := range recorder.Header() {
-		lowerKey := strings.ToLower(key)
-		// Skip grpc-specific headers that go in trailers
-		if strings.HasPrefix(lowerKey, "grpc-") {
-			continue
-		}
-		// Skip standard HTTP headers
-		if lowerKey == headerContentType || lowerKey == "content-length" ||
-			lowerKey == "date" || lowerKey == "server" {
-			continue
-		}
-		// Add custom headers to trailers (gRPC-Web sends custom headers as trailers)
-		for _, value := range values {
-			trailers.Add(key, value)
+	// Copy custom headers as trailers
+	for key, values := range headers {
+		if h.shouldCopyAsCustomTrailer(key) {
+			for _, value := range values {
+				trailers.Add(key, value)
+			}
 		}
 	}
+}
 
-	// Write trailers
-	trailerData := formatTrailerFrame(trailers)
-	return writer.writeTrailerFrame(trailerData)
+// shouldCopyAsGRPCTrailer checks if a header should be copied as a gRPC trailer
+func (h *grpcWebHandler) shouldCopyAsGRPCTrailer(key string) bool {
+	lowerKey := strings.ToLower(key)
+	return strings.HasPrefix(lowerKey, "grpc-") &&
+		key != "grpc-status" &&
+		key != "grpc-message"
+}
+
+// shouldCopyAsCustomTrailer checks if a header should be copied as a custom trailer
+func (h *grpcWebHandler) shouldCopyAsCustomTrailer(key string) bool {
+	lowerKey := strings.ToLower(key)
+
+	// Skip grpc-specific headers
+	if strings.HasPrefix(lowerKey, "grpc-") {
+		return false
+	}
+
+	// Skip standard HTTP headers
+	standardHeaders := map[string]bool{
+		headerContentType: true,
+		"content-length":  true,
+		"date":            true,
+		"server":          true,
+	}
+
+	return !standardHeaders[lowerKey]
 }
 
 // writeErrorResponse writes an error response

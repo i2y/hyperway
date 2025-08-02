@@ -37,127 +37,152 @@ func (s *Service) handleServerStreamRequest(w http.ResponseWriter, r *http.Reque
 		reqCtx = context.WithValue(reqCtx, contextKeyCancel, nil)
 	}
 
-	// Read request body
-	var body []byte
-	var err error
+	// Read and process request body
+	body, err := s.readStreamRequestBody(r, p, w)
+	if err != nil {
+		return // Error already written
+	}
+
+	// Decompress if needed
+	body, err = s.decompressRequestBody(r, body, w)
+	if err != nil {
+		return // Error already written
+	}
+
+	// Process the request
+	s.processStreamRequest(w, r, ctx, p, body, reqCtx)
+}
+
+// readStreamRequestBody reads the request body based on protocol
+func (s *Service) readStreamRequestBody(r *http.Request, p protocolInfo, w http.ResponseWriter) ([]byte, error) {
+	defer r.Body.Close()
 
 	if p.isGRPC {
-		// gRPC always uses framing
-		frameHeader := make([]byte, 5)
-		if _, err := io.ReadFull(r.Body, frameHeader); err != nil {
-			if p.isGRPC {
-				s.writeGRPCError(w, NewError(CodeInternal, "failed to read gRPC frame header"))
-			} else {
-				s.writeError(w, r, fmt.Errorf("failed to read gRPC frame header: %w", err))
-			}
-			return
-		}
+		return s.readGRPCFramedBody(r, p, w)
+	}
+	return s.readNonGRPCBody(r, p, w)
+}
 
-		// Parse frame header
-		// compressed := frameHeader[0] == 1
-		messageLength := binary.BigEndian.Uint32(frameHeader[1:5])
+// readGRPCFramedBody reads a gRPC framed message
+func (s *Service) readGRPCFramedBody(r *http.Request, _ protocolInfo, w http.ResponseWriter) ([]byte, error) {
+	frameHeader := make([]byte, 5)
+	if _, err := io.ReadFull(r.Body, frameHeader); err != nil {
+		s.writeGRPCError(w, NewError(CodeInternal, "failed to read gRPC frame header"))
+		return nil, err
+	}
 
-		// Read message body
-		body = make([]byte, messageLength)
-		if _, err := io.ReadFull(r.Body, body); err != nil {
-			s.writeGRPCError(w, NewError(CodeInternal, "failed to read gRPC message body"))
-			return
-		}
-		defer r.Body.Close()
-	} else {
-		// Non-gRPC: read entire body
-		body, err = io.ReadAll(r.Body)
-		if err != nil {
-			s.writeError(w, r, fmt.Errorf("failed to read body: %w", err))
-			return
-		}
-		defer r.Body.Close()
+	// Parse frame header
+	messageLength := binary.BigEndian.Uint32(frameHeader[1:5])
 
-		// Check if this is a Connect protocol request with framing
-		if p.isConnect && len(body) >= 5 {
-			// Check if it looks like Connect framing (5-byte header)
-			_ = body[0] // flags
-			length := binary.BigEndian.Uint32(body[1:5])
-			if int(length) == len(body)-5 {
-				// This is a framed message, extract the actual message
-				body = body[5:]
-			}
+	// Read message body
+	body := make([]byte, messageLength)
+	if _, err := io.ReadFull(r.Body, body); err != nil {
+		s.writeGRPCError(w, NewError(CodeInternal, "failed to read gRPC message body"))
+		return nil, err
+	}
+
+	return body, nil
+}
+
+// readNonGRPCBody reads a non-gRPC request body
+func (s *Service) readNonGRPCBody(r *http.Request, p protocolInfo, w http.ResponseWriter) ([]byte, error) {
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		s.writeError(w, r, fmt.Errorf("failed to read body: %w", err))
+		return nil, err
+	}
+
+	// Check if this is a Connect protocol request with framing
+	if p.isConnect && len(body) >= 5 {
+		// Check if it looks like Connect framing (5-byte header)
+		length := binary.BigEndian.Uint32(body[1:5])
+		if int(length) == len(body)-5 {
+			// This is a framed message, extract the actual message
+			body = body[5:]
 		}
 	}
 
-	// Handle compression if needed
+	return body, nil
+}
+
+// decompressRequestBody decompresses the request body if needed
+func (s *Service) decompressRequestBody(r *http.Request, body []byte, w http.ResponseWriter) ([]byte, error) {
 	if encoding := r.Header.Get("Content-Encoding"); encoding == CompressionGzip {
 		compressor, ok := GetCompressor(CompressionGzip)
 		if !ok {
 			s.writeError(w, r, fmt.Errorf("gzip decompression not available"))
-			return
+			return nil, fmt.Errorf("gzip decompression not available")
 		}
 		decompressed, err := compressor.Decompress(body)
 		if err != nil {
 			s.writeError(w, r, fmt.Errorf("failed to decompress request: %w", err))
-			return
+			return nil, err
 		}
-		body = decompressed
+		return decompressed, nil
 	}
+	return body, nil
+}
 
+// processStreamRequest processes the streaming request
+func (s *Service) processStreamRequest(w http.ResponseWriter, r *http.Request, ctx *handlerContext, p protocolInfo, body []byte, reqCtx context.Context) {
 	// Decode input
 	inputVal, decodeErr := s.decodeInput(r.Header.Get("Content-Type"), body, ctx)
 	if decodeErr != nil {
-		if p.isGRPC {
-			s.writeGRPCError(w, decodeErr.(*Error))
-		} else {
-			s.writeError(w, r, decodeErr)
-		}
+		s.writeProtocolError(w, r, p, decodeErr)
 		return
 	}
 
 	// Validate if enabled
 	if err := s.validateInput(inputVal, ctx); err != nil {
-		if p.isGRPC {
-			s.writeGRPCError(w, err.(*Error))
-		} else {
-			s.writeError(w, r, err)
-		}
+		s.writeProtocolError(w, r, p, err)
 		return
 	}
 
 	// Create stream implementation
 	baseStream := newServerStreamWriter(w, r, ctx, p)
 
-	// Call the handler
-	handlerValue := reflect.ValueOf(ctx.method.Handler)
-
 	// Add handler context to the request context
 	reqCtx = context.WithValue(reqCtx, handlerContextKey, ctx)
 
-	// The handler has been wrapped to accept untyped arguments
-	// Call it with the base stream directly
-
-	// Type assert to the wrapped handler signature
-	if wrappedHandler, ok := ctx.method.Handler.(func(context.Context, any, any) error); ok {
-		// Call the wrapped handler
-		err := wrappedHandler(reqCtx, inputVal.Interface(), baseStream)
-		if err != nil {
-			baseStream.sendError(err)
-			return
-		}
-	} else {
-		// Fallback to reflection
-		results := handlerValue.Call([]reflect.Value{
-			reflect.ValueOf(reqCtx),
-			inputVal,
-			reflect.ValueOf(baseStream),
-		})
-
-		if !results[0].IsNil() {
-			err := results[0].Interface().(error)
-			baseStream.sendError(err)
-			return
-		}
+	// Call the handler
+	if err := s.callStreamHandler(ctx, reqCtx, inputVal, baseStream); err != nil {
+		baseStream.sendError(err)
+		return
 	}
 
 	// Finalize the stream
 	baseStream.finalize()
+}
+
+// writeProtocolError writes an error based on the protocol
+func (s *Service) writeProtocolError(w http.ResponseWriter, r *http.Request, p protocolInfo, err error) {
+	if p.isGRPC {
+		s.writeGRPCError(w, err.(*Error))
+	} else {
+		s.writeError(w, r, err)
+	}
+}
+
+// callStreamHandler calls the streaming handler
+func (s *Service) callStreamHandler(ctx *handlerContext, reqCtx context.Context, inputVal reflect.Value, baseStream *serverStreamWriter) error {
+	// Type assert to the wrapped handler signature
+	if wrappedHandler, ok := ctx.method.Handler.(func(context.Context, any, any) error); ok {
+		// Call the wrapped handler
+		return wrappedHandler(reqCtx, inputVal.Interface(), baseStream)
+	}
+
+	// Fallback to reflection
+	handlerValue := reflect.ValueOf(ctx.method.Handler)
+	results := handlerValue.Call([]reflect.Value{
+		reflect.ValueOf(reqCtx),
+		inputVal,
+		reflect.ValueOf(baseStream),
+	})
+
+	if !results[0].IsNil() {
+		return results[0].Interface().(error)
+	}
+	return nil
 }
 
 // handleClientStreamRequest handles client-streaming RPC requests
@@ -503,50 +528,85 @@ func (s *serverStreamWriter) finalize() {
 		s.headersSent = true
 	}
 
-	if s.protocol.isConnect && !s.connectEnded {
-		// Send end-of-stream marker for Connect
-		endMessage := []byte("{}")
-		if _, err := s.w.Write([]byte{0x02}); err != nil { // End-of-stream flag
-			return
-		}
-		if err := binary.Write(s.w, binary.BigEndian, uint32(len(endMessage))); err != nil { //nolint:gosec // bounded by message size
-			return
-		}
-		if _, err := s.w.Write(endMessage); err != nil {
-			return
-		}
+	// Handle protocol-specific finalization
+	switch {
+	case s.protocol.isConnect && !s.connectEnded:
+		s.finalizeConnect()
+	case s.protocol.isGRPC:
+		s.finalizeGRPC()
+	default:
+		s.finalizeDefault()
+	}
+}
 
-		// Apply trailers as headers with "trailer-" prefix
-		if s.ctx.responseTrailers != nil {
-			for key, values := range s.ctx.responseTrailers {
-				for _, value := range values {
-					s.w.Header().Add("trailer-"+key, value)
-				}
-			}
-		}
+// finalizeConnect handles Connect protocol finalization
+func (s *serverStreamWriter) finalizeConnect() {
+	// Send end-of-stream marker
+	if err := s.sendConnectEndOfStream(); err != nil {
+		return
+	}
 
-		// Flush for Connect protocol
-		if s.flusher != nil {
-			s.flusher.Flush()
-		}
-	} else if s.protocol.isGRPC {
-		// For gRPC, set trailers without flushing
-		// The trailers will be sent automatically when the handler returns
-		trailer := s.w.Header()
-		trailer.Set("grpc-status", "0")
-		trailer.Set("grpc-message", "")
+	// Apply trailers as headers
+	s.applyConnectTrailers()
 
-		// Apply custom trailers
-		if s.ctx.responseTrailers != nil {
-			for key, values := range s.ctx.responseTrailers {
-				for _, value := range values {
-					trailer.Add(key, value)
-				}
-			}
+	// Flush for Connect protocol
+	if s.flusher != nil {
+		s.flusher.Flush()
+	}
+}
+
+// sendConnectEndOfStream sends the Connect end-of-stream marker
+func (s *serverStreamWriter) sendConnectEndOfStream() error {
+	endMessage := []byte("{}")
+	if _, err := s.w.Write([]byte{0x02}); err != nil { // End-of-stream flag
+		return err
+	}
+	if err := binary.Write(s.w, binary.BigEndian, uint32(len(endMessage))); err != nil { //nolint:gosec // bounded by message size
+		return err
+	}
+	_, err := s.w.Write(endMessage)
+	return err
+}
+
+// applyConnectTrailers applies trailers as headers with "trailer-" prefix
+func (s *serverStreamWriter) applyConnectTrailers() {
+	if s.ctx.responseTrailers == nil {
+		return
+	}
+	for key, values := range s.ctx.responseTrailers {
+		for _, value := range values {
+			s.w.Header().Add("trailer-"+key, value)
 		}
-		// DO NOT flush for gRPC - let the HTTP/2 transport handle trailer sending
-	} else if s.flusher != nil {
-		// For other protocols, flush to ensure data is sent
+	}
+}
+
+// finalizeGRPC handles gRPC protocol finalization
+func (s *serverStreamWriter) finalizeGRPC() {
+	// Set default trailers
+	trailer := s.w.Header()
+	trailer.Set("grpc-status", "0")
+	trailer.Set("grpc-message", "")
+
+	// Apply custom trailers
+	s.applyGRPCTrailers(trailer)
+	// DO NOT flush for gRPC - let the HTTP/2 transport handle trailer sending
+}
+
+// applyGRPCTrailers applies custom trailers for gRPC
+func (s *serverStreamWriter) applyGRPCTrailers(trailer http.Header) {
+	if s.ctx.responseTrailers == nil {
+		return
+	}
+	for key, values := range s.ctx.responseTrailers {
+		for _, value := range values {
+			trailer.Add(key, value)
+		}
+	}
+}
+
+// finalizeDefault handles default protocol finalization
+func (s *serverStreamWriter) finalizeDefault() {
+	if s.flusher != nil {
 		s.flusher.Flush()
 	}
 }
