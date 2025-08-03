@@ -847,7 +847,7 @@ MIT License - see [LICENSE](LICENSE) file for details.
 A: Hyperway generates standard Protobuf schemas. Export them as `.proto` files and use any existing tooling - buf, protoc, linters, breaking change detection, etc. Your exported schemas are fully compatible with the entire Protobuf ecosystem.
 
 ### Q: Is this suitable for production use?
-A: Yes. Hyperway is designed for production workloads with comprehensive testing, performance optimizations, and memory-efficient implementation. The hybrid approach allows teams to maintain the rigor of schema-first design while improving development velocity.
+A: Hyperway supports unary and server-streaming RPCs in production environments. The library has been optimized for performance and memory efficiency. However, client-streaming and bidirectional streaming are still under development. We recommend evaluating Hyperway for your specific use case and conducting thorough testing before production deployment.
 
 ### Q: What about cross-language support?
 A: Export your schemas as `.proto` files and generate clients in any language. Hyperway maintains full wire compatibility with standard gRPC and Connect clients, so your services work seamlessly with clients written in any supported language.
