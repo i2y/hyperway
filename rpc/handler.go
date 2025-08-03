@@ -459,6 +459,7 @@ type protocolInfo struct {
 	isConnect  bool
 	isGRPC     bool
 	isGRPCWeb  bool
+	isJSONRPC  bool
 	wantsJSON  bool
 	wantsProto bool
 }
@@ -470,6 +471,15 @@ func detectProtocol(r *http.Request) protocolInfo {
 
 	info := protocolInfo{
 		isConnect: connectProtocol == "1",
+	}
+
+	// Check if this is a JSON-RPC request
+	if strings.HasSuffix(r.URL.Path, "/jsonrpc") ||
+		contentType == "application/json-rpc" ||
+		contentType == "application/json-rpc+json" {
+		info.isJSONRPC = true
+		info.wantsJSON = true
+		return info
 	}
 
 	// Detect protocol type
@@ -567,6 +577,12 @@ func (s *Service) handleRequest(w http.ResponseWriter, r *http.Request, ctx *han
 	// Setup request context
 	ctx.requestHeaders = r.Header
 	protocolInfo := detectProtocol(r)
+
+	// Handle JSON-RPC requests
+	if protocolInfo.isJSONRPC {
+		s.handleJSONRPCRequest(w, r, ctx)
+		return
+	}
 
 	// Validate method
 	if r.Method != http.MethodPost {

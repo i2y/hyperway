@@ -33,11 +33,12 @@ Hyperway preserves these benefits while accelerating development:
 This hybrid approach maintains the discipline of schema-first development while removing friction from the development cycle. Teams can work rapidly in Go while still providing standard `.proto` files for tooling, documentation, and cross-language support.
 
 ### How It Works
-Hyperway implements gRPC and Connect RPC protocols with dynamic capabilities:
+Hyperway implements multiple RPC protocols with dynamic capabilities:
 - Generates Protobuf schemas from your Go structs at runtime
-- Supports gRPC (Protobuf) and Connect RPC (both Protobuf and JSON)
-- Maintains wire compatibility with standard gRPC/Connect clients
+- Supports gRPC (Protobuf), Connect RPC (both Protobuf and JSON), gRPC-Web, and JSON-RPC 2.0
+- Maintains wire compatibility with standard clients for all protocols
 - Supports unary and server-streaming RPCs
+- Handles both HTTP/1.1 and HTTP/2 (with h2c support)
 
 ## 📊 Performance
 
@@ -61,7 +62,7 @@ For detailed benchmarks and performance characteristics, see the [protocol-bench
 - 📋 **Schema-First**: Go types as your schema definition language
 - 📤 **Proto Export**: Generate standard `.proto` files from your running service
 - ⚡ **High Performance**: Uses hyperpb for efficient dynamic protobuf parsing
-- 🔄 **Multi-Protocol**: Supports gRPC (Protobuf), Connect RPC (Protobuf and JSON), and gRPC-Web
+- 🔄 **Multi-Protocol**: Supports gRPC, Connect RPC, gRPC-Web, and JSON-RPC 2.0 on the same server
 - 🛡️ **Type-Safe**: Full Go type safety with runtime schema generation
 - 🤝 **Protocol Compatible**: Works with any gRPC, Connect, or gRPC-Web client
 - ✅ **Built-in Validation**: Struct tags for automatic input validation
@@ -123,6 +124,7 @@ func main() {
     svc := rpc.NewService("UserService", 
         rpc.WithPackage("user.v1"),
         rpc.WithValidation(true),
+        rpc.WithJSONRPC("/jsonrpc"),  // Enable JSON-RPC support
     )
     
     // Register your handlers
@@ -130,7 +132,7 @@ func main() {
         log.Fatal(err)
     }
     
-    // Start serving (supports gRPC and Connect RPC protocols)
+    // Start serving (supports all protocols)
     gateway, _ := rpc.NewGateway(svc)
     log.Fatal(http.ListenAndServe(":8080", gateway))
 }
@@ -145,6 +147,18 @@ Your service automatically supports multiple protocols:
 curl -X POST http://localhost:8080/user.v1.UserService/CreateUser \
   -H "Content-Type: application/json" \
   -d '{"name":"Alice","email":"alice@example.com"}'
+```
+
+### JSON-RPC 2.0
+```bash
+curl -X POST http://localhost:8080/jsonrpc \
+  -H "Content-Type: application/json" \
+  -d '{
+    "jsonrpc": "2.0",
+    "method": "CreateUser",
+    "params": {"name":"Alice","email":"alice@example.com"},
+    "id": 1
+  }'
 ```
 
 ### gRPC (with reflection)
