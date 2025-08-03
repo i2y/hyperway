@@ -2,7 +2,7 @@
 
 **Schema-driven RPC development, redefined for Go.**
 
-Hyperway bridges code-first agility with schema-first discipline. Your Go structs become the single source of truth, dynamically generating Protobuf schemas at runtime. Serve production-ready gRPC and Connect APIs while maintaining the ability to export standard .proto files to share your schema-driven API with any team, any language.
+Hyperway bridges code-first agility with schema-first discipline. Your Go structs become the single source of truth, dynamically generating Protobuf schemas at runtime. Serve production-ready gRPC, Connect, gRPC-Web, and JSON-RPC 2.0 APIs from a single codebase, with automatic OpenAPI documentation, while maintaining the ability to export standard .proto files to share your schema-driven API with any team, any language.
 
 ## 🚀 Why Hyperway?
 
@@ -36,6 +36,7 @@ This hybrid approach maintains the discipline of schema-first development while 
 Hyperway implements multiple RPC protocols with dynamic capabilities:
 - Generates Protobuf schemas from your Go structs at runtime
 - Supports gRPC (Protobuf), Connect RPC (both Protobuf and JSON), gRPC-Web, and JSON-RPC 2.0
+- Automatically generates OpenAPI 3.0 documentation at `/openapi.json`
 - Maintains wire compatibility with standard clients for all protocols
 - Supports unary and server-streaming RPCs
 - Handles both HTTP/1.1 and HTTP/2 (with h2c support)
@@ -132,15 +133,17 @@ func main() {
         log.Fatal(err)
     }
     
-    // Start serving (supports all protocols)
+    // Create gateway - returns a standard http.Handler
     gateway, _ := rpc.NewGateway(svc)
+    
+    // Serve using standard net/http (supports all protocols)
     log.Fatal(http.ListenAndServe(":8080", gateway))
 }
 ```
 
 ## 🧪 Testing Your Service
 
-Your service automatically supports multiple protocols:
+Your service automatically supports multiple protocols and provides OpenAPI documentation:
 
 ### Connect RPC (JSON format)
 ```bash
@@ -182,6 +185,15 @@ buf curl --protocol connect \
   --http2-prior-knowledge \
   --data '{"name":"David","email":"david@example.com"}' \
   http://localhost:8080/user.v1.UserService/CreateUser
+```
+
+### OpenAPI Documentation
+```bash
+# Get OpenAPI 3.0 specification
+curl http://localhost:8080/openapi.json
+
+# View in Swagger UI or any OpenAPI viewer
+# The spec includes all your RPC methods with request/response schemas
 ```
 
 ## 🔄 The Hybrid Approach: Schema-Driven Development in Go
@@ -498,6 +510,202 @@ svc := rpc.NewService("MyService",
 )
 ```
 
+### HTTP Middleware and Handler Composition
+
+Hyperway's gateway implements the standard `http.Handler` interface, making it fully compatible with Go's HTTP ecosystem. This means you can:
+- Use any standard net/http middleware
+- Combine it with other HTTP handlers
+- Integrate with existing HTTP routers and frameworks
+- **Pass context values from middleware to RPC handlers**
+
+#### Context Propagation
+
+HTTP middleware can add values to the request context, and these values will be accessible in your RPC handlers:
+
+```go
+// Middleware that adds context values
+func contextMiddleware(next http.Handler) http.Handler {
+    return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+        // Add request ID
+        ctx := context.WithValue(r.Context(), "request-id", generateRequestID())
+        
+        // Add user info from auth header
+        if userID := extractUserID(r.Header.Get("Authorization")); userID != "" {
+            ctx = context.WithValue(ctx, "user-id", userID)
+        }
+        
+        // Pass the enriched context to the next handler
+        next.ServeHTTP(w, r.WithContext(ctx))
+    })
+}
+
+// RPC handler can access context values
+func createOrder(ctx context.Context, req *CreateOrderRequest) (*CreateOrderResponse, error) {
+    // Get values from context
+    requestID, _ := ctx.Value("request-id").(string)
+    userID, _ := ctx.Value("user-id").(string)
+    
+    log.Printf("Processing order for user %s (request: %s)", userID, requestID)
+    
+    // Your business logic here...
+    return &CreateOrderResponse{
+        OrderID:   generateOrderID(),
+        RequestID: requestID,
+    }, nil
+}
+
+// Logging middleware with request tracking
+func loggingMiddleware(next http.Handler) http.Handler {
+    return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+        start := time.Now()
+        requestID := generateRequestID()
+        
+        // Add request ID to context for correlation
+        ctx := context.WithValue(r.Context(), "request-id", requestID)
+        
+        log.Printf("[%s] Started %s %s", requestID, r.Method, r.URL.Path)
+        
+        // Wrap ResponseWriter to capture status
+        wrapped := &responseWriter{ResponseWriter: w, statusCode: http.StatusOK}
+        next.ServeHTTP(wrapped, r.WithContext(ctx))
+        
+        log.Printf("[%s] Completed with %d in %v", 
+            requestID, wrapped.statusCode, time.Since(start))
+    })
+}
+
+// Auth middleware with context enrichment
+func authMiddleware(next http.Handler) http.Handler {
+    return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+        token := r.Header.Get("Authorization")
+        if token == "" {
+            http.Error(w, "Unauthorized", http.StatusUnauthorized)
+            return
+        }
+        
+        // Validate token and extract user info
+        userInfo, err := validateToken(token)
+        if err != nil {
+            http.Error(w, "Invalid token", http.StatusUnauthorized)
+            return
+        }
+        
+        // Add user info to context
+        ctx := context.WithValue(r.Context(), "user", userInfo)
+        ctx = context.WithValue(ctx, "user-id", userInfo.ID)
+        
+        next.ServeHTTP(w, r.WithContext(ctx))
+    })
+}
+
+```
+
+#### Complete Example
+
+Here's a complete example showing middleware composition and context propagation:
+
+```go
+package main
+
+import (
+    "context"
+    "fmt"
+    "log"
+    "net/http"
+    "time"
+    
+    "github.com/i2y/hyperway/rpc"
+    "github.com/google/uuid"
+)
+
+// Request/Response types
+type CreateOrderRequest struct {
+    ProductID string `json:"product_id" validate:"required"`
+    Quantity  int    `json:"quantity" validate:"required,min=1"`
+}
+
+type CreateOrderResponse struct {
+    OrderID   string `json:"order_id"`
+    UserID    string `json:"user_id"`
+    RequestID string `json:"request_id"`
+}
+
+// Business logic that uses context values
+func createOrder(ctx context.Context, req *CreateOrderRequest) (*CreateOrderResponse, error) {
+    // Access context values set by middleware
+    requestID, _ := ctx.Value("request-id").(string)
+    userID, _ := ctx.Value("user-id").(string)
+    
+    log.Printf("[%s] Creating order for user %s: %d x %s", 
+        requestID, userID, req.Quantity, req.ProductID)
+    
+    // Create order...
+    orderID := fmt.Sprintf("order-%s", uuid.New().String()[:8])
+    
+    return &CreateOrderResponse{
+        OrderID:   orderID,
+        UserID:    userID,
+        RequestID: requestID,
+    }, nil
+}
+
+func main() {
+    // Create service
+    svc := rpc.NewService("OrderService",
+        rpc.WithPackage("shop.v1"),
+        rpc.WithValidation(true),
+    )
+    
+    // Register handlers
+    rpc.Register(svc, "CreateOrder", createOrder)
+    
+    // Create gateway
+    gateway, _ := rpc.NewGateway(svc)
+    
+    // Create a standard mux
+    mux := http.NewServeMux()
+    
+    // Chain middleware: auth -> logging -> context -> gateway
+    // Context values flow through to RPC handlers
+    mux.Handle("/", 
+        authMiddleware(
+            loggingMiddleware(
+                contextMiddleware(gateway))))
+    
+    // Add health check endpoint
+    mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+        w.WriteHeader(http.StatusOK)
+        fmt.Fprintln(w, `{"status":"healthy"}`)
+    })
+    
+    // Serve static files
+    mux.Handle("/static/", http.StripPrefix("/static/", 
+        http.FileServer(http.Dir("./static"))))
+    
+    // Add metrics endpoint
+    mux.Handle("/metrics", promhttp.Handler())
+    
+    // Use with popular routers (e.g., gorilla/mux, chi)
+    // router := chi.NewRouter()
+    // router.Use(middleware.RequestID)
+    // router.Use(middleware.Logger)
+    // router.Mount("/api", gateway)
+    
+    log.Println("Server starting on :8080")
+    log.Fatal(http.ListenAndServe(":8080", mux))
+}
+```
+
+This flexibility allows you to:
+- **Pass request-scoped data** (request ID, user info, trace ID) from middleware to handlers
+- **Add authentication, rate limiting, or CORS handling** at the HTTP layer
+- **Serve your RPC API alongside REST endpoints** on the same server
+- **Integrate with observability tools** (Prometheus, OpenTelemetry)
+- **Use popular Go web frameworks and routers** (chi, gin, echo, gorilla/mux)
+- **Implement custom request/response processing** with full HTTP control
+
+The key insight is that Hyperway's gateway is just a standard `http.Handler`, so any context values set via `r.WithContext()` in your middleware will be available in your RPC handlers via the `ctx` parameter.
+
 ## 🏗️ Architecture
 
 Hyperway implements a schema-driven architecture where:
@@ -510,6 +718,7 @@ Hyperway implements a schema-driven architecture where:
 ### Technical Foundation
 - **High-Performance Parsing**: Leverages hyperpb for optimized message handling
 - **Multi-Protocol Gateway**: Unified implementation of gRPC, Connect, and gRPC-Web
+- **Standard http.Handler Interface**: Seamless integration with Go's HTTP ecosystem
 - **Extensible Middleware**: Interceptors for cross-cutting concerns
 - **Type-Safe by Design**: Compile-time type checking with runtime protocol compliance
 
@@ -638,7 +847,7 @@ MIT License - see [LICENSE](LICENSE) file for details.
 A: Hyperway generates standard Protobuf schemas. Export them as `.proto` files and use any existing tooling - buf, protoc, linters, breaking change detection, etc. Your exported schemas are fully compatible with the entire Protobuf ecosystem.
 
 ### Q: Is this suitable for production use?
-A: Yes. Hyperway is designed for production workloads with comprehensive testing, performance optimizations, and memory-efficient implementation. The hybrid approach allows teams to maintain the rigor of schema-first design while improving development velocity.
+A: Hyperway supports unary and server-streaming RPCs in production environments. The library has been optimized for performance and memory efficiency. However, client-streaming and bidirectional streaming are still under development. We recommend evaluating Hyperway for your specific use case and conducting thorough testing before production deployment.
 
 ### Q: What about cross-language support?
 A: Export your schemas as `.proto` files and generate clients in any language. Hyperway maintains full wire compatibility with standard gRPC and Connect clients, so your services work seamlessly with clients written in any supported language.
