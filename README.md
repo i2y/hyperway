@@ -506,45 +506,161 @@ Hyperway's gateway implements the standard `http.Handler` interface, making it f
 - Use any standard net/http middleware
 - Combine it with other HTTP handlers
 - Integrate with existing HTTP routers and frameworks
+- **Pass context values from middleware to RPC handlers**
+
+#### Context Propagation
+
+HTTP middleware can add values to the request context, and these values will be accessible in your RPC handlers:
 
 ```go
-// Standard middleware example
+// Middleware that adds context values
+func contextMiddleware(next http.Handler) http.Handler {
+    return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+        // Add request ID
+        ctx := context.WithValue(r.Context(), "request-id", generateRequestID())
+        
+        // Add user info from auth header
+        if userID := extractUserID(r.Header.Get("Authorization")); userID != "" {
+            ctx = context.WithValue(ctx, "user-id", userID)
+        }
+        
+        // Pass the enriched context to the next handler
+        next.ServeHTTP(w, r.WithContext(ctx))
+    })
+}
+
+// RPC handler can access context values
+func createOrder(ctx context.Context, req *CreateOrderRequest) (*CreateOrderResponse, error) {
+    // Get values from context
+    requestID, _ := ctx.Value("request-id").(string)
+    userID, _ := ctx.Value("user-id").(string)
+    
+    log.Printf("Processing order for user %s (request: %s)", userID, requestID)
+    
+    // Your business logic here...
+    return &CreateOrderResponse{
+        OrderID:   generateOrderID(),
+        RequestID: requestID,
+    }, nil
+}
+
+// Logging middleware with request tracking
 func loggingMiddleware(next http.Handler) http.Handler {
     return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
         start := time.Now()
-        log.Printf("Started %s %s", r.Method, r.URL.Path)
+        requestID := generateRequestID()
+        
+        // Add request ID to context for correlation
+        ctx := context.WithValue(r.Context(), "request-id", requestID)
+        
+        log.Printf("[%s] Started %s %s", requestID, r.Method, r.URL.Path)
         
         // Wrap ResponseWriter to capture status
         wrapped := &responseWriter{ResponseWriter: w, statusCode: http.StatusOK}
-        next.ServeHTTP(wrapped, r)
+        next.ServeHTTP(wrapped, r.WithContext(ctx))
         
-        log.Printf("Completed %s %s with %d in %v", 
-            r.Method, r.URL.Path, wrapped.statusCode, time.Since(start))
+        log.Printf("[%s] Completed with %d in %v", 
+            requestID, wrapped.statusCode, time.Since(start))
     })
 }
 
-// Auth middleware
+// Auth middleware with context enrichment
 func authMiddleware(next http.Handler) http.Handler {
     return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
         token := r.Header.Get("Authorization")
-        if token == "" || !isValidToken(token) {
+        if token == "" {
             http.Error(w, "Unauthorized", http.StatusUnauthorized)
             return
         }
-        next.ServeHTTP(w, r)
+        
+        // Validate token and extract user info
+        userInfo, err := validateToken(token)
+        if err != nil {
+            http.Error(w, "Invalid token", http.StatusUnauthorized)
+            return
+        }
+        
+        // Add user info to context
+        ctx := context.WithValue(r.Context(), "user", userInfo)
+        ctx = context.WithValue(ctx, "user-id", userInfo.ID)
+        
+        next.ServeHTTP(w, r.WithContext(ctx))
     })
 }
 
-// Combining with other handlers
+```
+
+#### Complete Example
+
+Here's a complete example showing middleware composition and context propagation:
+
+```go
+package main
+
+import (
+    "context"
+    "fmt"
+    "log"
+    "net/http"
+    "time"
+    
+    "github.com/i2y/hyperway/rpc"
+    "github.com/google/uuid"
+)
+
+// Request/Response types
+type CreateOrderRequest struct {
+    ProductID string `json:"product_id" validate:"required"`
+    Quantity  int    `json:"quantity" validate:"required,min=1"`
+}
+
+type CreateOrderResponse struct {
+    OrderID   string `json:"order_id"`
+    UserID    string `json:"user_id"`
+    RequestID string `json:"request_id"`
+}
+
+// Business logic that uses context values
+func createOrder(ctx context.Context, req *CreateOrderRequest) (*CreateOrderResponse, error) {
+    // Access context values set by middleware
+    requestID, _ := ctx.Value("request-id").(string)
+    userID, _ := ctx.Value("user-id").(string)
+    
+    log.Printf("[%s] Creating order for user %s: %d x %s", 
+        requestID, userID, req.Quantity, req.ProductID)
+    
+    // Create order...
+    orderID := fmt.Sprintf("order-%s", uuid.New().String()[:8])
+    
+    return &CreateOrderResponse{
+        OrderID:   orderID,
+        UserID:    userID,
+        RequestID: requestID,
+    }, nil
+}
+
 func main() {
-    // Create your RPC gateway
+    // Create service
+    svc := rpc.NewService("OrderService",
+        rpc.WithPackage("shop.v1"),
+        rpc.WithValidation(true),
+    )
+    
+    // Register handlers
+    rpc.Register(svc, "CreateOrder", createOrder)
+    
+    // Create gateway
     gateway, _ := rpc.NewGateway(svc)
     
     // Create a standard mux
     mux := http.NewServeMux()
     
-    // Mount RPC services with middleware
-    mux.Handle("/api/", authMiddleware(loggingMiddleware(gateway)))
+    // Chain middleware: auth -> logging -> context -> gateway
+    // Context values flow through to RPC handlers
+    mux.Handle("/", 
+        authMiddleware(
+            loggingMiddleware(
+                contextMiddleware(gateway))))
     
     // Add health check endpoint
     mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
@@ -561,19 +677,24 @@ func main() {
     
     // Use with popular routers (e.g., gorilla/mux, chi)
     // router := chi.NewRouter()
+    // router.Use(middleware.RequestID)
     // router.Use(middleware.Logger)
     // router.Mount("/api", gateway)
     
+    log.Println("Server starting on :8080")
     log.Fatal(http.ListenAndServe(":8080", mux))
 }
 ```
 
 This flexibility allows you to:
-- Add authentication, rate limiting, or CORS handling
-- Serve your RPC API alongside REST endpoints
-- Integrate with observability tools (Prometheus, OpenTelemetry)
-- Use popular Go web frameworks and routers
-- Implement custom request/response processing
+- **Pass request-scoped data** (request ID, user info, trace ID) from middleware to handlers
+- **Add authentication, rate limiting, or CORS handling** at the HTTP layer
+- **Serve your RPC API alongside REST endpoints** on the same server
+- **Integrate with observability tools** (Prometheus, OpenTelemetry)
+- **Use popular Go web frameworks and routers** (chi, gin, echo, gorilla/mux)
+- **Implement custom request/response processing** with full HTTP control
+
+The key insight is that Hyperway's gateway is just a standard `http.Handler`, so any context values set via `r.WithContext()` in your middleware will be available in your RPC handlers via the `ctx` parameter.
 
 ## 🏗️ Architecture
 
