@@ -14,6 +14,14 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
+// Constants
+const (
+	frameHeaderLength    = 5
+	frameLengthOffset    = 1
+	frameLengthSize      = 5
+	defaultFlushInterval = 10 * time.Millisecond
+)
+
 // handleServerStreamRequest handles server-streaming RPC requests
 func (s *Service) handleServerStreamRequest(w http.ResponseWriter, r *http.Request, ctx *handlerContext, p protocolInfo) {
 	// Add panic recovery
@@ -55,7 +63,7 @@ func (s *Service) handleServerStreamRequest(w http.ResponseWriter, r *http.Reque
 
 // readStreamRequestBody reads the request body based on protocol
 func (s *Service) readStreamRequestBody(r *http.Request, p protocolInfo, w http.ResponseWriter) ([]byte, error) {
-	defer r.Body.Close()
+	defer func() { _ = r.Body.Close() }()
 
 	if p.isGRPC {
 		return s.readGRPCFramedBody(r, p, w)
@@ -65,14 +73,14 @@ func (s *Service) readStreamRequestBody(r *http.Request, p protocolInfo, w http.
 
 // readGRPCFramedBody reads a gRPC framed message
 func (s *Service) readGRPCFramedBody(r *http.Request, _ protocolInfo, w http.ResponseWriter) ([]byte, error) {
-	frameHeader := make([]byte, 5)
+	frameHeader := make([]byte, frameHeaderLength)
 	if _, err := io.ReadFull(r.Body, frameHeader); err != nil {
 		s.writeGRPCError(w, NewError(CodeInternal, "failed to read gRPC frame header"))
 		return nil, err
 	}
 
 	// Parse frame header
-	messageLength := binary.BigEndian.Uint32(frameHeader[1:5])
+	messageLength := binary.BigEndian.Uint32(frameHeader[frameLengthOffset:frameLengthSize])
 
 	// Read message body
 	body := make([]byte, messageLength)
@@ -93,12 +101,12 @@ func (s *Service) readNonGRPCBody(r *http.Request, p protocolInfo, w http.Respon
 	}
 
 	// Check if this is a Connect protocol request with framing
-	if p.isConnect && len(body) >= 5 {
+	if p.isConnect && len(body) >= frameHeaderLength {
 		// Check if it looks like Connect framing (5-byte header)
-		length := binary.BigEndian.Uint32(body[1:5])
-		if int(length) == len(body)-5 {
+		length := binary.BigEndian.Uint32(body[frameLengthOffset:frameLengthSize])
+		if int(length) == len(body)-frameHeaderLength {
 			// This is a framed message, extract the actual message
-			body = body[5:]
+			body = body[frameHeaderLength:]
 		}
 	}
 
@@ -189,11 +197,12 @@ func (s *Service) callStreamHandler(ctx *handlerContext, reqCtx context.Context,
 func (s *Service) handleClientStreamRequest(w http.ResponseWriter, r *http.Request, _ *handlerContext, p protocolInfo) {
 	// For now, return unimplemented
 	err := NewError(CodeUnimplemented, "Client streaming not yet implemented")
-	if p.isConnect {
+	switch {
+	case p.isConnect:
 		s.writeConnectError(w, r, err)
-	} else if p.isGRPC {
+	case p.isGRPC:
 		s.writeGRPCError(w, err)
-	} else {
+	default:
 		http.Error(w, err.Error(), http.StatusNotImplemented)
 	}
 }
@@ -202,11 +211,12 @@ func (s *Service) handleClientStreamRequest(w http.ResponseWriter, r *http.Reque
 func (s *Service) handleBidiStreamRequest(w http.ResponseWriter, r *http.Request, _ *handlerContext, p protocolInfo) {
 	// For now, return unimplemented
 	err := NewError(CodeUnimplemented, "Bidirectional streaming not yet implemented")
-	if p.isConnect {
+	switch {
+	case p.isConnect:
 		s.writeConnectError(w, r, err)
-	} else if p.isGRPC {
+	case p.isGRPC:
 		s.writeGRPCError(w, err)
-	} else {
+	default:
 		http.Error(w, err.Error(), http.StatusNotImplemented)
 	}
 }
@@ -240,18 +250,19 @@ func newServerStreamWriter(w http.ResponseWriter, r *http.Request, ctx *handlerC
 		ctx:         ctx,
 		protocol:    p,
 		flusher:     flusher,
-		flushPeriod: 10 * time.Millisecond, // Flush every 10ms or after each message in low-throughput scenarios
+		flushPeriod: defaultFlushInterval, // Flush every 10ms or after each message in low-throughput scenarios
 		lastFlush:   time.Now(),
 	}
 
 	// Pre-determine encoding function based on protocol
 	isJSON := p.wantsJSON
-	if p.isGRPC && !isJSON {
+	switch {
+	case p.isGRPC && !isJSON:
 		// gRPC protobuf encoding
 		s.encodeFunc = func(msg any) ([]byte, error) {
 			return ctx.outputCodec.MarshalStruct(msg)
 		}
-	} else if ctx.useProtoOutput && !isJSON {
+	case ctx.useProtoOutput && !isJSON:
 		// Connect protobuf encoding
 		s.encodeFunc = func(msg any) ([]byte, error) {
 			if protoMsg, ok := msg.(proto.Message); ok {
@@ -259,10 +270,10 @@ func newServerStreamWriter(w http.ResponseWriter, r *http.Request, ctx *handlerC
 			}
 			return nil, fmt.Errorf("expected proto.Message, got %T", msg)
 		}
-	} else if isJSON {
+	case isJSON:
 		// JSON encoding
 		s.encodeFunc = json.Marshal
-	} else {
+	default:
 		// Default: use codec
 		s.encodeFunc = func(msg any) ([]byte, error) {
 			return ctx.outputCodec.MarshalStruct(msg)
@@ -304,11 +315,12 @@ func (s *serverStreamWriter) Send(msg any) error {
 
 	// Write the message based on protocol
 	var writeErr error
-	if s.protocol.isConnect {
+	switch {
+	case s.protocol.isConnect:
 		writeErr = s.sendConnectMessage(data)
-	} else if s.protocol.isGRPC {
+	case s.protocol.isGRPC:
 		writeErr = s.sendGRPCMessage(data)
-	} else {
+	default:
 		// Plain HTTP streaming (newline-delimited JSON)
 		_, writeErr = s.w.Write(data)
 		if writeErr == nil {
@@ -369,15 +381,15 @@ func (s *serverStreamWriter) sendConnectMessage(data []byte) error {
 	// Format: 1 byte flags + 4 bytes length (big-endian) + data
 
 	// Get a frame buffer from pool
-	frameSize := 5 + len(data)
+	frameSize := frameHeaderLength + len(data)
 	frameBuf := s.getFrameBuffer(frameSize)
 	defer s.putFrameBuffer(frameBuf)
 
 	// Build frame in single buffer
 	frame := (*frameBuf)[:frameSize]
-	frame[0] = 0                                              // flags (0 = no compression)
-	binary.BigEndian.PutUint32(frame[1:5], uint32(len(data))) //nolint:gosec // length is bounded by message size limits
-	copy(frame[5:], data)
+	frame[0] = 0                                                                            // flags (0 = no compression)
+	binary.BigEndian.PutUint32(frame[frameLengthOffset:frameLengthSize], uint32(len(data))) //nolint:gosec // length is bounded by message size limits
+	copy(frame[frameHeaderLength:], data)
 
 	// Single write for entire frame
 	if _, err := s.w.Write(frame); err != nil {
@@ -396,7 +408,7 @@ func (s *serverStreamWriter) sendConnectMessage(data []byte) error {
 
 func (s *serverStreamWriter) sendGRPCMessage(data []byte) error {
 	// gRPC frame format: 1 byte flags + 4 bytes length + data
-	frameSize := 5 + len(data)
+	frameSize := frameHeaderLength + len(data)
 	frameBuf := s.getFrameBuffer(frameSize)
 	defer s.putFrameBuffer(frameBuf)
 

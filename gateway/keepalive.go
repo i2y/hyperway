@@ -5,6 +5,16 @@ import (
 	"time"
 )
 
+// Constants
+const (
+	defaultTime                = 2 * time.Hour
+	defaultMaxPingsWithoutData = 2
+	aggressiveTime             = 30 * time.Second
+	aggressiveTimeout          = 10 * time.Second
+	defaultMinTime             = 5 * time.Minute
+	defaultMaxPingStrikes      = 2
+)
+
 // KeepaliveParameters configures gRPC keepalive according to the specification.
 // These settings control HTTP/2 PING frames for connection health checking.
 type KeepaliveParameters struct {
@@ -51,19 +61,19 @@ const (
 // DefaultKeepaliveParams returns default client-side keepalive parameters.
 func DefaultKeepaliveParams() KeepaliveParameters {
 	return KeepaliveParameters{
-		Time:                2 * time.Hour,
+		Time:                defaultTime,
 		Timeout:             defaultKeepaliveTimeoutShort,
 		PermitWithoutStream: false,
-		MaxPingsWithoutData: 2,
+		MaxPingsWithoutData: defaultMaxPingsWithoutData,
 	}
 }
 
 // DefaultKeepaliveEnforcementPolicy returns default server-side enforcement policy.
 func DefaultKeepaliveEnforcementPolicy() KeepaliveEnforcementPolicy {
 	return KeepaliveEnforcementPolicy{
-		MinTime:             5 * time.Minute,
+		MinTime:             defaultMinTime,
 		PermitWithoutStream: false,
-		MaxPingStrikes:      2,
+		MaxPingStrikes:      defaultMaxPingStrikes,
 	}
 }
 
@@ -71,10 +81,10 @@ func DefaultKeepaliveEnforcementPolicy() KeepaliveEnforcementPolicy {
 // environments with proxies that kill idle connections.
 func AggressiveKeepaliveParams() KeepaliveParameters {
 	return KeepaliveParameters{
-		Time:                30 * time.Second, // Send ping every 30 seconds
-		Timeout:             10 * time.Second, // Timeout after 10 seconds
-		PermitWithoutStream: true,             // Allow pings without active calls
-		MaxPingsWithoutData: 2,
+		Time:                aggressiveTime,    // Send ping every 30 seconds
+		Timeout:             aggressiveTimeout, // Timeout after 10 seconds
+		PermitWithoutStream: true,              // Allow pings without active calls
+		MaxPingsWithoutData: defaultMaxPingsWithoutData,
 	}
 }
 

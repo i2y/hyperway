@@ -61,7 +61,7 @@ func TestGRPCWebFraming(t *testing.T) {
 				t.Fatalf("writeTrailerFrame failed: %v", err)
 			}
 
-			writer.close()
+			_ = writer.close()
 
 			// Read frames back
 			reader := newGRPCWebFrameReader(&buf, tt.mode)
@@ -239,7 +239,7 @@ func TestGRPCWebHandler(t *testing.T) {
 		// Write response
 		w.Header().Set("grpc-status", "0")
 		w.Header().Set("grpc-message", "OK")
-		w.Write([]byte("response data"))
+		_, _ = w.Write([]byte("response data"))
 	})
 
 	// Create gRPC-Web handler
@@ -273,7 +273,7 @@ func TestGRPCWebHandler(t *testing.T) {
 			if err != nil {
 				t.Fatalf("failed to write request frame: %v", err)
 			}
-			writer.close()
+			_ = writer.close()
 
 			// Create HTTP request
 			req := httptest.NewRequest("POST", "/test.Service/Method", &requestBuf)
@@ -321,8 +321,8 @@ func TestGRPCWebHandler(t *testing.T) {
 			// Parse trailers
 			trailers := parseTrailerFrame(frame.payload)
 
-			if status := trailers.Get("grpc-status"); status != "0" {
-				t.Errorf("expected status 0, got %q", status)
+			if grpcStatus := trailers.Get("grpc-status"); grpcStatus != "0" {
+				t.Errorf("expected status 0, got %q", grpcStatus)
 			}
 
 			if message := trailers.Get("grpc-message"); message != "OK" {
@@ -345,8 +345,8 @@ func TestGRPCWebErrorHandling(t *testing.T) {
 	// Create request
 	var requestBuf bytes.Buffer
 	writer := newGRPCWebFrameWriter(&requestBuf, grpcWebModeBinary)
-	writer.writeDataFrame([]byte("test"))
-	writer.close()
+	_ = writer.writeDataFrame([]byte("test"))
+	_ = writer.close()
 
 	req := httptest.NewRequest("POST", "/test", &requestBuf)
 	req.Header.Set("Content-Type", "application/grpc-web")
@@ -373,8 +373,8 @@ func TestGRPCWebErrorHandling(t *testing.T) {
 	}
 
 	trailers := parseTrailerFrame(frame.payload)
-	if status := trailers.Get("grpc-status"); status != strconv.Itoa(int(codes.NotFound)) {
-		t.Errorf("expected NotFound status, got %q", status)
+	if grpcStatus := trailers.Get("grpc-status"); grpcStatus != strconv.Itoa(int(codes.NotFound)) {
+		t.Errorf("expected NotFound status, got %q", grpcStatus)
 	}
 }
 
@@ -389,7 +389,7 @@ func TestGRPCWebBase64Encoding(t *testing.T) {
 	if err != nil {
 		t.Fatalf("writeDataFrame failed: %v", err)
 	}
-	writer.close()
+	_ = writer.close()
 
 	// The output should be base64 encoded
 	encoded := buf.String()
@@ -530,7 +530,7 @@ func TestGRPCWebInterceptor(t *testing.T) {
 	baseHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// This should be called for non-gRPC-Web requests
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("regular response"))
+		_, _ = w.Write([]byte("regular response"))
 	})
 
 	// Create interceptor
@@ -540,8 +540,8 @@ func TestGRPCWebInterceptor(t *testing.T) {
 		// Create gRPC-Web request
 		var buf bytes.Buffer
 		writer := newGRPCWebFrameWriter(&buf, grpcWebModeBinary)
-		writer.writeDataFrame([]byte("test"))
-		writer.close()
+		_ = writer.writeDataFrame([]byte("test"))
+		_ = writer.close()
 
 		req := httptest.NewRequest("POST", "/test", &buf)
 		req.Header.Set("Content-Type", "application/grpc-web")
@@ -644,17 +644,17 @@ func TestConcurrentFrameWriting(t *testing.T) {
 	done := make(chan bool, 3)
 
 	go func() {
-		writer.writeDataFrame([]byte("message1"))
+		_ = writer.writeDataFrame([]byte("message1"))
 		done <- true
 	}()
 
 	go func() {
-		writer.writeDataFrame([]byte("message2"))
+		_ = writer.writeDataFrame([]byte("message2"))
 		done <- true
 	}()
 
 	go func() {
-		writer.writeTrailerFrame([]byte("grpc-status: 0\r\n"))
+		_ = writer.writeTrailerFrame([]byte("grpc-status: 0\r\n"))
 		done <- true
 	}()
 
@@ -712,8 +712,8 @@ func TestErrorToStatus(t *testing.T) {
 			frame, _ = reader.readFrame()
 			trailers := parseTrailerFrame(frame.payload)
 
-			if status := trailers.Get("grpc-status"); status != strconv.Itoa(int(tt.expectedCode)) {
-				t.Errorf("wrong status code: got %s, want %d", status, tt.expectedCode)
+			if grpcStatus := trailers.Get("grpc-status"); grpcStatus != strconv.Itoa(int(tt.expectedCode)) {
+				t.Errorf("wrong status code: got %s, want %d", grpcStatus, tt.expectedCode)
 			}
 
 			if msg := trailers.Get("grpc-message"); msg != tt.expectedMsg {

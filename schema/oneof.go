@@ -5,6 +5,11 @@ import (
 	"strings"
 )
 
+// Constants
+const (
+	minOneofFields = 2
+)
+
 // OneofGroup represents a detected oneof group
 type OneofGroup struct {
 	Name   string             // Group name (e.g., "identifier")
@@ -57,7 +62,7 @@ func detectTaggedOneofGroups(structType reflect.Type) []OneofGroup {
 				}
 			}
 
-			if len(fields) >= 2 {
+			if len(fields) >= minOneofFields {
 				groups = append(groups, OneofGroup{
 					Name:   strings.ToLower(field.Name),
 					Fields: fields,

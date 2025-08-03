@@ -12,6 +12,15 @@ import (
 	"golang.org/x/net/http2/h2c"
 )
 
+// Constants
+const (
+	countDelay        = 100 * time.Millisecond
+	httpReadTimeout   = 30 * time.Second
+	httpWriteTimeout  = 30 * time.Second
+	httpIdleTimeout   = 120 * time.Second
+	httpHeaderTimeout = 5 * time.Second
+)
+
 // CountRequest represents a request to count
 type CountRequest struct {
 	UpTo int `json:"up_to"`
@@ -55,7 +64,7 @@ func handleCount(ctx context.Context, req *CountRequest, stream rpc.ServerStream
 		}
 
 		// Small delay to simulate work
-		time.Sleep(100 * time.Millisecond)
+		time.Sleep(countDelay)
 	}
 
 	// Set trailer
@@ -123,7 +132,7 @@ func main() {
 	// Add a simple HTML page for testing
 	mux.HandleFunc("/test", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
-		fmt.Fprint(w, testHTML)
+		_, _ = fmt.Fprint(w, testHTML)
 	})
 
 	log.Println("Streaming server starting on :8080")
@@ -139,8 +148,12 @@ func main() {
 	handler := h2c.NewHandler(mux, h2s)
 
 	server := &http.Server{
-		Addr:    ":8080",
-		Handler: handler,
+		Addr:              ":8080",
+		Handler:           handler,
+		ReadTimeout:       httpReadTimeout,
+		WriteTimeout:      httpWriteTimeout,
+		IdleTimeout:       httpIdleTimeout,
+		ReadHeaderTimeout: httpHeaderTimeout,
 	}
 
 	if err := server.ListenAndServe(); err != nil {

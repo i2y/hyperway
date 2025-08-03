@@ -24,6 +24,13 @@ import (
 // ErrSkipField is returned when a field should be skipped during processing.
 var ErrSkipField = errors.New("skip field")
 
+// Constants
+const (
+	mapKeyFieldNumber       = 1
+	mapValueFieldNumber     = 2
+	underscoreOverheadRatio = 10
+)
+
 // title capitalizes the first letter of a string
 func title(s string) string {
 	if s == "" {
@@ -120,13 +127,12 @@ func NewBuilder(opts BuilderOptions) *Builder {
 }
 
 // BuildMessage converts a Go type to a protoreflect.MessageDescriptor.
-func (b *Builder) BuildMessage(rt reflect.Type) (protoreflect.MessageDescriptor, error) { //nolint:gocyclo // Complex type handling requires many conditions
-	b.mu.RLock()
-	if md, ok := b.cache[rt]; ok {
-		b.mu.RUnlock()
+// BuildMessage builds a protoreflect.MessageDescriptor from a Go struct type.
+func (b *Builder) BuildMessage(rt reflect.Type) (protoreflect.MessageDescriptor, error) {
+	// Check cache first
+	if md := b.getCachedMessage(rt); md != nil {
 		return md, nil
 	}
-	b.mu.RUnlock()
 
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -136,13 +142,50 @@ func (b *Builder) BuildMessage(rt reflect.Type) (protoreflect.MessageDescriptor,
 		return md, nil
 	}
 
+	// Validate and prepare the type
+	rt, name, err := b.prepareType(rt)
+	if err != nil {
+		return nil, err
+	}
+
+	// Initialize build context
+	b.initializeBuildContext(name)
+
+	// Build all message types
+	if err := b.buildAllMessageTypes(rt, name); err != nil {
+		return nil, err
+	}
+
+	// Add comments and imports
+	b.addCommentsToFile()
+	b.addImportsToFile()
+
+	// Finalize the file
+	b.finalizeFile(name)
+
+	// Create and cache the message descriptor
+	return b.createAndCacheDescriptor(rt, name)
+}
+
+// getCachedMessage returns a cached message descriptor if available.
+func (b *Builder) getCachedMessage(rt reflect.Type) protoreflect.MessageDescriptor {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	if md, ok := b.cache[rt]; ok {
+		return md
+	}
+	return nil
+}
+
+// prepareType validates and prepares the reflect.Type for processing.
+func (b *Builder) prepareType(rt reflect.Type) (reflect.Type, string, error) {
 	// Ensure we have a struct type
 	if rt.Kind() == reflect.Ptr {
 		rt = rt.Elem()
 	}
 
 	if rt.Kind() != reflect.Struct {
-		return nil, fmt.Errorf("type %v is not a struct", rt)
+		return nil, "", fmt.Errorf("type %v is not a struct", rt)
 	}
 
 	name := rt.Name()
@@ -150,7 +193,12 @@ func (b *Builder) BuildMessage(rt reflect.Type) (protoreflect.MessageDescriptor,
 		name = "AnonymousMessage"
 	}
 
-	// Initialize build context
+	return rt, name, nil
+}
+
+// initializeBuildContext sets up the builder's context for a new build.
+func (b *Builder) initializeBuildContext(name string) {
+	// Initialize file descriptor
 	b.currentFile = &descriptorpb.FileDescriptorProto{
 		Name:    proto(fmt.Sprintf("%s/%s.proto", b.packageName, strings.ToLower(name))),
 		Package: proto(b.packageName),
@@ -170,7 +218,8 @@ func (b *Builder) BuildMessage(rt reflect.Type) (protoreflect.MessageDescriptor,
 	} else {
 		b.currentFile.Syntax = proto("proto3")
 	}
-	// Pre-allocate message types map with expected capacity
+
+	// Pre-allocate collections
 	b.messageTypes = make(map[string]*descriptorpb.DescriptorProto, defaultMessageTypesSize)
 	b.pendingTypes = nil
 	b.wellKnownImports = make(map[string]bool)
@@ -181,12 +230,15 @@ func (b *Builder) BuildMessage(rt reflect.Type) (protoreflect.MessageDescriptor,
 	b.messageIndices = make(map[string]int32)
 	b.messageComments = make(map[string]*CommentInfo)
 	b.fieldComments = make(map[string][]*fieldCommentInfo)
+}
 
+// buildAllMessageTypes builds the main message and all dependent types.
+func (b *Builder) buildAllMessageTypes(rt reflect.Type, name string) error {
 	// Build the main message
 	visited := make(map[reflect.Type]bool)
 	msgProto, err := b.collectMessageType(rt, name, visited)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	b.messageTypes[name] = msgProto
 
@@ -199,7 +251,7 @@ func (b *Builder) BuildMessage(rt reflect.Type) (protoreflect.MessageDescriptor,
 			if _, exists := b.messageTypes[p.name]; !exists {
 				msg, err := b.collectMessageType(p.rt, p.name, visited)
 				if err != nil {
-					return nil, err
+					return err
 				}
 				b.messageTypes[p.name] = msg
 			}
@@ -207,7 +259,6 @@ func (b *Builder) BuildMessage(rt reflect.Type) (protoreflect.MessageDescriptor,
 	}
 
 	// Add all collected messages to the file
-	// Pre-allocate slice with known capacity
 	b.currentFile.MessageType = make([]*descriptorpb.DescriptorProto, 0, len(b.messageTypes))
 	messageIndex := int32(0)
 	for msgName, msg := range b.messageTypes {
@@ -216,7 +267,12 @@ func (b *Builder) BuildMessage(rt reflect.Type) (protoreflect.MessageDescriptor,
 		messageIndex++
 	}
 
-	// Now add message comments using the correct indices
+	return nil
+}
+
+// addCommentsToFile adds all collected comments to the source code info.
+func (b *Builder) addCommentsToFile() {
+	// Add message comments
 	for msgName, comment := range b.messageComments {
 		if idx, ok := b.messageIndices[msgName]; ok {
 			path := []int32{FileDescriptorProtoMessageTypeField, idx}
@@ -224,7 +280,7 @@ func (b *Builder) BuildMessage(rt reflect.Type) (protoreflect.MessageDescriptor,
 		}
 	}
 
-	// Add field comments using the correct indices
+	// Add field comments
 	for msgName, fieldComments := range b.fieldComments {
 		if msgIdx, ok := b.messageIndices[msgName]; ok {
 			for _, fieldComment := range fieldComments {
@@ -238,15 +294,20 @@ func (b *Builder) BuildMessage(rt reflect.Type) (protoreflect.MessageDescriptor,
 			}
 		}
 	}
+}
 
-	// Add well-known type imports
+// addImportsToFile adds well-known type imports to the file.
+func (b *Builder) addImportsToFile() {
 	if len(b.wellKnownImports) > 0 {
 		b.currentFile.Dependency = make([]string, 0, len(b.wellKnownImports))
 		for importPath := range b.wellKnownImports {
 			b.currentFile.Dependency = append(b.currentFile.Dependency, importPath)
 		}
 	}
+}
 
+// finalizeFile completes the file setup.
+func (b *Builder) finalizeFile(name string) {
 	// Attach source code info only if we have locations
 	sourceCodeInfo := b.sourceCodeInfo.Build()
 	if sourceCodeInfo != nil && len(sourceCodeInfo.Location) > 0 {
@@ -255,7 +316,10 @@ func (b *Builder) BuildMessage(rt reflect.Type) (protoreflect.MessageDescriptor,
 
 	// Cache the file
 	b.fileCache[strings.ToLower(name)] = b.currentFile
+}
 
+// createAndCacheDescriptor creates the final message descriptor and caches it.
+func (b *Builder) createAndCacheDescriptor(rt reflect.Type, name string) (protoreflect.MessageDescriptor, error) {
 	// Build the file descriptor with well-known types registry
 	registry, err := b.createFileRegistry()
 	if err != nil {
@@ -697,7 +761,7 @@ func (b *Builder) buildMapField(
 	}
 	keyField := &descriptorpb.FieldDescriptorProto{
 		Name:   proto("key"),
-		Number: proto(int32(1)),
+		Number: proto(int32(mapKeyFieldNumber)),
 		Label:  labelPtr(descriptorpb.FieldDescriptorProto_LABEL_OPTIONAL),
 		Type:   typePtr(keyFieldType),
 	}
@@ -710,7 +774,7 @@ func (b *Builder) buildMapField(
 	}
 	valueField := &descriptorpb.FieldDescriptorProto{
 		Name:   proto("value"),
-		Number: proto(int32(2)),
+		Number: proto(int32(mapValueFieldNumber)),
 		Label:  labelPtr(descriptorpb.FieldDescriptorProto_LABEL_OPTIONAL),
 		Type:   typePtr(valueFieldType),
 	}

@@ -409,17 +409,8 @@ func (s *Service) GetFileDescriptorSet() *descriptorpb.FileDescriptorSet {
 	return s.buildCompleteFileDescriptorSet()
 }
 
-// buildCompleteFileDescriptorSet builds a complete FileDescriptorSet including service definition.
-//
-//nolint:gocyclo // This function orchestrates the complete file descriptor set generation
-func (s *Service) buildCompleteFileDescriptorSet() *descriptorpb.FileDescriptorSet {
-	// Create a single file that contains all message types and the service
-	// This avoids duplicate type definitions across multiple files
-
-	// Create SourceCodeInfo builder for service file
-	sourceCodeInfo := schema.NewSourceCodeInfoBuilder()
-
-	// Collect all unique message types used by this service
+// collectMessageTypes collects all unique message types used by this service.
+func (s *Service) collectMessageTypes() map[string]reflect.Type {
 	messageTypes := make(map[string]reflect.Type)
 	for _, method := range s.methods {
 		// Add input and output types
@@ -430,7 +421,11 @@ func (s *Service) buildCompleteFileDescriptorSet() *descriptorpb.FileDescriptorS
 		collectNestedTypes(method.InputType, messageTypes, s.packageName)
 		collectNestedTypes(method.OutputType, messageTypes, s.packageName)
 	}
+	return messageTypes
+}
 
+// buildMessageProtos builds all message types and returns their descriptors.
+func (s *Service) buildMessageProtos(messageTypes map[string]reflect.Type) ([]*descriptorpb.DescriptorProto, *descriptorpb.FileDescriptorSet) {
 	// Create a new builder for this specific file to avoid conflicts
 	builderOpts := schema.BuilderOptions{
 		PackageName: s.packageName,
@@ -449,8 +444,7 @@ func (s *Service) buildCompleteFileDescriptorSet() *descriptorpb.FileDescriptorS
 
 	fileBuilder := schema.NewBuilder(builderOpts)
 
-	// Build all message types and collect their descriptors
-	var messageProtos []*descriptorpb.DescriptorProto
+	// Build all message types
 	processedTypes := make(map[string]bool)
 
 	// Use a sorted order to ensure consistent output
@@ -478,6 +472,8 @@ func (s *Service) buildCompleteFileDescriptorSet() *descriptorpb.FileDescriptorS
 
 	// Get all built files and extract message descriptors
 	builtFiles := fileBuilder.GetFileDescriptorSet()
+	var messageProtos []*descriptorpb.DescriptorProto
+
 	if builtFiles != nil {
 		// Collect all message types from all files
 		allMessages := make(map[string]*descriptorpb.DescriptorProto)
@@ -497,6 +493,11 @@ func (s *Service) buildCompleteFileDescriptorSet() *descriptorpb.FileDescriptorS
 		}
 	}
 
+	return messageProtos, builtFiles
+}
+
+// buildServiceProto creates the service descriptor with all methods.
+func (s *Service) buildServiceProto(sourceCodeInfo *schema.SourceCodeInfoBuilder) *descriptorpb.ServiceDescriptorProto {
 	// Create service descriptor
 	serviceProto := &descriptorpb.ServiceDescriptorProto{
 		Name:   ptr(s.name),
@@ -553,7 +554,37 @@ func (s *Service) buildCompleteFileDescriptorSet() *descriptorpb.FileDescriptorS
 		methodIndex++
 	}
 
-	// Create a single file with all messages and the service
+	return serviceProto
+}
+
+// buildCompleteFileDescriptorSet builds a complete FileDescriptorSet including service definition.
+func (s *Service) buildCompleteFileDescriptorSet() *descriptorpb.FileDescriptorSet {
+	// Create SourceCodeInfo builder for service file
+	sourceCodeInfo := schema.NewSourceCodeInfoBuilder()
+
+	// Collect all unique message types used by this service
+	messageTypes := s.collectMessageTypes()
+
+	// Build all message types and collect their descriptors
+	messageProtos, builtFiles := s.buildMessageProtos(messageTypes)
+
+	// Create service descriptor
+	serviceProto := s.buildServiceProto(sourceCodeInfo)
+
+	// Create file descriptor
+	fileProto := s.createFileDescriptor(messageProtos, serviceProto, builtFiles, sourceCodeInfo)
+
+	// Create complete FileDescriptorSet with just this single file
+	fdset := &descriptorpb.FileDescriptorSet{
+		File: []*descriptorpb.FileDescriptorProto{fileProto},
+	}
+
+	return fdset
+}
+
+// createFileDescriptor creates the file descriptor proto with all components.
+func (s *Service) createFileDescriptor(messageProtos []*descriptorpb.DescriptorProto, serviceProto *descriptorpb.ServiceDescriptorProto, builtFiles *descriptorpb.FileDescriptorSet, sourceCodeInfo *schema.SourceCodeInfoBuilder) *descriptorpb.FileDescriptorProto {
+	// Create a single file that contains all messages and the service
 	fileProto := &descriptorpb.FileDescriptorProto{
 		Name:        ptr(fmt.Sprintf("%s.proto", s.packageName)),
 		Package:     ptr(s.packageName),
@@ -562,23 +593,7 @@ func (s *Service) buildCompleteFileDescriptorSet() *descriptorpb.FileDescriptorS
 	}
 
 	// Add well-known type imports if needed
-	// Check the built files for dependencies
-	importMap := make(map[string]bool)
-	if builtFiles != nil {
-		for _, file := range builtFiles.File {
-			for _, dep := range file.Dependency {
-				if strings.HasPrefix(dep, "google/protobuf/") {
-					importMap[dep] = true
-				}
-			}
-		}
-	}
-	// Convert map to slice
-	imports := make([]string, 0, len(importMap))
-	for imp := range importMap {
-		imports = append(imports, imp)
-	}
-	fileProto.Dependency = imports
+	fileProto.Dependency = s.collectImports(builtFiles)
 
 	// Set syntax based on service options
 	if s.options.UseEditions {
@@ -597,12 +612,27 @@ func (s *Service) buildCompleteFileDescriptorSet() *descriptorpb.FileDescriptorS
 		fileProto.SourceCodeInfo = sci
 	}
 
-	// Create complete FileDescriptorSet with just this single file
-	fdset := &descriptorpb.FileDescriptorSet{
-		File: []*descriptorpb.FileDescriptorProto{fileProto},
-	}
+	return fileProto
+}
 
-	return fdset
+// collectImports collects all necessary imports from built files.
+func (s *Service) collectImports(builtFiles *descriptorpb.FileDescriptorSet) []string {
+	importMap := make(map[string]bool)
+	if builtFiles != nil {
+		for _, file := range builtFiles.File {
+			for _, dep := range file.Dependency {
+				if strings.HasPrefix(dep, "google/protobuf/") {
+					importMap[dep] = true
+				}
+			}
+		}
+	}
+	// Convert map to slice
+	imports := make([]string, 0, len(importMap))
+	for imp := range importMap {
+		imports = append(imports, imp)
+	}
+	return imports
 }
 
 // collectNestedTypes recursively collects all types referenced by a given type

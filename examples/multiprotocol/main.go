@@ -14,6 +14,15 @@ import (
 	"golang.org/x/net/http2/h2c"
 )
 
+// Constants
+const (
+	maxConcurrentStreams = 100
+	httpReadTimeout      = 30 * time.Second
+	httpWriteTimeout     = 30 * time.Second
+	httpIdleTimeout      = 120 * time.Second
+	httpHeaderTimeout    = 5 * time.Second
+)
+
 // Simple echo service for testing
 type EchoRequest struct {
 	Message string `json:"message" validate:"required"`
@@ -67,8 +76,12 @@ func main() {
 	srv := &http.Server{
 		Addr: ":9090",
 		Handler: h2c.NewHandler(gateway, &http2.Server{
-			MaxConcurrentStreams: 100,
+			MaxConcurrentStreams: maxConcurrentStreams,
 		}),
+		ReadTimeout:       httpReadTimeout,
+		WriteTimeout:      httpWriteTimeout,
+		IdleTimeout:       httpIdleTimeout,
+		ReadHeaderTimeout: httpHeaderTimeout,
 	}
 
 	log.Println("Multi-protocol server starting on :9090")

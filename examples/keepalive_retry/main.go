@@ -15,6 +15,28 @@ import (
 	"golang.org/x/net/http2/h2c"
 )
 
+// Constants for configuration
+const (
+	serverPort             = ":8080"
+	keepaliveTime          = 10 * time.Second
+	keepaliveTimeout       = 3 * time.Second
+	keepalivePermitTime    = 3 * time.Second
+	keepaliveMinTime       = 5 * time.Second
+	maxPingStrikes         = 2
+	retryMaxAttempts       = 4
+	retryInitialBackoff    = 100 * time.Millisecond
+	retryMaxBackoff        = 30 * time.Second
+	retryBackoffMultiplier = 2.0
+	retryPercentage        = 100
+	retryThrottleMax       = 100
+	retryThrottleRatio     = 0.875
+	retryTokenRatio        = 0.1
+	httpReadTimeout        = 30 * time.Second
+	httpWriteTimeout       = 30 * time.Second
+	httpIdleTimeout        = 120 * time.Second
+	httpHeaderTimeout      = 5 * time.Second
+)
+
 // EchoRequest represents an echo request.
 type EchoRequest struct {
 	Message string `json:"message" validate:"required"`
@@ -73,10 +95,10 @@ func main() {
 				},
 				Timeout: "30s",
 				RetryPolicy: &rpc.RetryPolicy{
-					MaxAttempts:       4,
+					MaxAttempts:       retryMaxAttempts,
 					InitialBackoff:    "0.1s",
 					MaxBackoff:        "10s",
-					BackoffMultiplier: 2.0,
+					BackoffMultiplier: retryBackoffMultiplier,
 					RetryableStatusCodes: []string{
 						"UNAVAILABLE",
 						"DEADLINE_EXCEEDED",
@@ -85,8 +107,8 @@ func main() {
 			},
 		},
 		RetryThrottling: &rpc.RetryThrottling{
-			MaxTokens:  100,
-			TokenRatio: 0.1,
+			MaxTokens:  retryThrottleMax,
+			TokenRatio: retryTokenRatio,
 		},
 	}
 
@@ -119,9 +141,9 @@ func main() {
 	// Configure keepalive parameters
 	keepaliveParams := gateway.AggressiveKeepaliveParams() // For demo purposes
 	keepaliveEnforcement := gateway.KeepaliveEnforcementPolicy{
-		MinTime:             10 * time.Second, // Allow faster pings for demo
+		MinTime:             keepaliveMinTime,
 		PermitWithoutStream: true,
-		MaxPingStrikes:      5,
+		MaxPingStrikes:      maxPingStrikes,
 	}
 
 	// Create gateway with keepalive configuration
@@ -147,8 +169,12 @@ func main() {
 	h2s := &http2.Server{}
 	handler := h2c.NewHandler(gw, h2s)
 	server := &http.Server{
-		Addr:    ":8080",
-		Handler: handler,
+		Addr:              serverPort,
+		Handler:           handler,
+		ReadTimeout:       httpReadTimeout,
+		WriteTimeout:      httpWriteTimeout,
+		IdleTimeout:       httpIdleTimeout,
+		ReadHeaderTimeout: httpHeaderTimeout,
 	}
 
 	fmt.Println("Server Configuration:")

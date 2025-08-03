@@ -10,6 +10,11 @@ import (
 	"strings"
 )
 
+// Additional constants
+const (
+	colonSplitIndex = 2
+)
+
 const (
 	// grpcWebMessageFlagData indicates a data frame
 	grpcWebMessageFlagData = 0x00
@@ -176,8 +181,8 @@ func parseTrailerFrame(payload []byte) http.Header {
 			continue
 		}
 
-		parts := strings.SplitN(line, ":", 2)
-		if len(parts) != 2 {
+		parts := strings.SplitN(line, ":", colonSplitIndex)
+		if len(parts) != colonSplitIndex {
 			continue
 		}
 

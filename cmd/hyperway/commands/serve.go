@@ -12,6 +12,15 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// Constants
+const (
+	defaultPort             = 8080
+	defaultKeepaliveTime    = 30 * time.Second
+	defaultKeepaliveTimeout = 15 * time.Second
+	defaultMaxPingStrikes   = 2
+	defaultKeepaliveMinTime = 60 * time.Second
+)
+
 // serveOptions holds options for the serve command.
 type serveOptions struct {
 	port             int
@@ -53,13 +62,13 @@ Examples:
 	}
 
 	// Add flags
-	cmd.Flags().IntVarP(&opts.port, "port", "p", 8080, "Server port")
+	cmd.Flags().IntVarP(&opts.port, "port", "p", defaultPort, "Server port")
 	cmd.Flags().StringVar(&opts.host, "host", "0.0.0.0", "Server host")
 	cmd.Flags().StringVarP(&opts.configFile, "config", "c", "", "Configuration file path")
 	cmd.Flags().BoolVar(&opts.enableReflection, "reflection", true, "Enable gRPC reflection")
 	cmd.Flags().BoolVar(&opts.enableOpenAPI, "openapi", true, "Enable OpenAPI endpoint")
 	cmd.Flags().BoolVar(&opts.enableMetrics, "metrics", false, "Enable metrics endpoint")
-	cmd.Flags().DurationVar(&opts.gracefulTimeout, "graceful-timeout", 30*time.Second, "Graceful shutdown timeout")
+	cmd.Flags().DurationVar(&opts.gracefulTimeout, "graceful-timeout", defaultKeepaliveTime, "Graceful shutdown timeout")
 
 	return cmd
 }
@@ -89,23 +98,23 @@ func runServe(opts *serveOptions) error {
 	// Add a health check endpoint
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		fmt.Fprintln(w, "OK")
+		_, _ = fmt.Fprintln(w, "OK")
 	})
 
 	// Add placeholder endpoints
 	if opts.enableOpenAPI {
 		mux.HandleFunc("/openapi", func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
-			fmt.Fprintln(w, `{"info":{"title":"Hyperway API","version":"1.0.0"}}`)
+			_, _ = fmt.Fprintln(w, `{"info":{"title":"Hyperway API","version":"1.0.0"}}`)
 		})
 	}
 
 	if opts.enableMetrics {
 		mux.HandleFunc("/metrics", func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "text/plain")
-			fmt.Fprintln(w, "# HELP hyperway_requests_total Total number of requests")
-			fmt.Fprintln(w, "# TYPE hyperway_requests_total counter")
-			fmt.Fprintln(w, "hyperway_requests_total 0")
+			_, _ = fmt.Fprintln(w, "# HELP hyperway_requests_total Total number of requests")
+			_, _ = fmt.Fprintln(w, "# TYPE hyperway_requests_total counter")
+			_, _ = fmt.Fprintln(w, "hyperway_requests_total 0")
 		})
 	}
 
@@ -114,9 +123,9 @@ func runServe(opts *serveOptions) error {
 	server := &http.Server{
 		Addr:         addr,
 		Handler:      mux,
-		ReadTimeout:  15 * time.Second,
-		WriteTimeout: 15 * time.Second,
-		IdleTimeout:  60 * time.Second,
+		ReadTimeout:  defaultKeepaliveTimeout,
+		WriteTimeout: defaultKeepaliveTimeout,
+		IdleTimeout:  defaultKeepaliveMinTime,
 	}
 
 	// Start server in goroutine

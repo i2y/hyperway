@@ -17,6 +17,13 @@ import (
 	hyperwayproto "github.com/i2y/hyperway/proto"
 )
 
+// Constants for timeouts and permissions
+const (
+	defaultTimeout = 30 * time.Second
+	filePermission = 0600
+	dirPermission  = 0750
+)
+
 // NewProtoCommand creates the proto command with subcommands.
 func NewProtoCommand() *cobra.Command {
 	cmd := &cobra.Command{
@@ -78,7 +85,7 @@ Examples:
 	cmd.Flags().StringVarP(&opts.format, "format", "f", "files", "Output format: files or zip")
 	cmd.Flags().BoolVar(&opts.includeComments, "comments", true, "Include comments in proto files")
 	cmd.Flags().BoolVar(&opts.sortElements, "sort", false, "Sort proto elements alphabetically")
-	cmd.Flags().DurationVar(&opts.timeout, "timeout", 30*time.Second, "Request timeout")
+	cmd.Flags().DurationVar(&opts.timeout, "timeout", defaultTimeout, "Request timeout")
 
 	return cmd
 }
@@ -95,7 +102,7 @@ func runProtoExport(opts *protoExportOptions) error {
 	// Create a new stream
 	ctx := context.Background()
 	stream := reflectClient.NewStream(ctx)
-	defer stream.Close()
+	defer func() { _, _ = stream.Close() }()
 
 	// List services
 	services, err := stream.ListServices()
@@ -179,7 +186,7 @@ func exportToZip(exporter *hyperwayproto.Exporter, fdset *descriptorpb.FileDescr
 	}
 
 	// Write ZIP file
-	if err := os.WriteFile(outputFile, zipData, 0600); err != nil {
+	if err := os.WriteFile(outputFile, zipData, filePermission); err != nil {
 		return fmt.Errorf("failed to write ZIP file: %w", err)
 	}
 
@@ -195,7 +202,7 @@ func exportToFiles(exporter *hyperwayproto.Exporter, fdset *descriptorpb.FileDes
 	}
 
 	// Create output directory if needed
-	if err := os.MkdirAll(output, 0755); err != nil {
+	if err := os.MkdirAll(output, dirPermission); err != nil {
 		return fmt.Errorf("failed to create output directory: %w", err)
 	}
 
@@ -205,12 +212,12 @@ func exportToFiles(exporter *hyperwayproto.Exporter, fdset *descriptorpb.FileDes
 
 		// Create subdirectories if needed
 		dir := filepath.Dir(outputPath)
-		if err := os.MkdirAll(dir, 0755); err != nil {
+		if err := os.MkdirAll(dir, dirPermission); err != nil {
 			return fmt.Errorf("failed to create directory %s: %w", dir, err)
 		}
 
 		// Write file
-		if err := os.WriteFile(outputPath, []byte(content), 0600); err != nil {
+		if err := os.WriteFile(outputPath, []byte(content), filePermission); err != nil {
 			return fmt.Errorf("failed to write %s: %w", outputPath, err)
 		}
 

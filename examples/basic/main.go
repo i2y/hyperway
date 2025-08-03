@@ -4,10 +4,19 @@ import (
 	"context"
 	"log"
 	"net/http"
+	"time"
 
 	"github.com/i2y/hyperway/rpc"
 	"golang.org/x/net/http2"
 	"golang.org/x/net/http2/h2c"
+)
+
+// Constants for timeouts
+const (
+	httpReadTimeout   = 30 * time.Second
+	httpWriteTimeout  = 30 * time.Second
+	httpIdleTimeout   = 120 * time.Second
+	httpHeaderTimeout = 5 * time.Second
 )
 
 // Model definitions
@@ -89,8 +98,12 @@ func main() {
 	handler := h2c.NewHandler(mux, h2s)
 
 	server := &http.Server{
-		Addr:    ":8091",
-		Handler: handler,
+		Addr:              ":8091",
+		Handler:           handler,
+		ReadTimeout:       httpReadTimeout,
+		WriteTimeout:      httpWriteTimeout,
+		IdleTimeout:       httpIdleTimeout,
+		ReadHeaderTimeout: httpHeaderTimeout,
 	}
 
 	if err := server.ListenAndServe(); err != nil {
