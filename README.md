@@ -132,8 +132,10 @@ func main() {
         log.Fatal(err)
     }
     
-    // Start serving (supports all protocols)
+    // Create gateway - returns a standard http.Handler
     gateway, _ := rpc.NewGateway(svc)
+    
+    // Serve using standard net/http (supports all protocols)
     log.Fatal(http.ListenAndServe(":8080", gateway))
 }
 ```
@@ -498,6 +500,81 @@ svc := rpc.NewService("MyService",
 )
 ```
 
+### HTTP Middleware and Handler Composition
+
+Hyperway's gateway implements the standard `http.Handler` interface, making it fully compatible with Go's HTTP ecosystem. This means you can:
+- Use any standard net/http middleware
+- Combine it with other HTTP handlers
+- Integrate with existing HTTP routers and frameworks
+
+```go
+// Standard middleware example
+func loggingMiddleware(next http.Handler) http.Handler {
+    return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+        start := time.Now()
+        log.Printf("Started %s %s", r.Method, r.URL.Path)
+        
+        // Wrap ResponseWriter to capture status
+        wrapped := &responseWriter{ResponseWriter: w, statusCode: http.StatusOK}
+        next.ServeHTTP(wrapped, r)
+        
+        log.Printf("Completed %s %s with %d in %v", 
+            r.Method, r.URL.Path, wrapped.statusCode, time.Since(start))
+    })
+}
+
+// Auth middleware
+func authMiddleware(next http.Handler) http.Handler {
+    return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+        token := r.Header.Get("Authorization")
+        if token == "" || !isValidToken(token) {
+            http.Error(w, "Unauthorized", http.StatusUnauthorized)
+            return
+        }
+        next.ServeHTTP(w, r)
+    })
+}
+
+// Combining with other handlers
+func main() {
+    // Create your RPC gateway
+    gateway, _ := rpc.NewGateway(svc)
+    
+    // Create a standard mux
+    mux := http.NewServeMux()
+    
+    // Mount RPC services with middleware
+    mux.Handle("/api/", authMiddleware(loggingMiddleware(gateway)))
+    
+    // Add health check endpoint
+    mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+        w.WriteHeader(http.StatusOK)
+        fmt.Fprintln(w, `{"status":"healthy"}`)
+    })
+    
+    // Serve static files
+    mux.Handle("/static/", http.StripPrefix("/static/", 
+        http.FileServer(http.Dir("./static"))))
+    
+    // Add metrics endpoint
+    mux.Handle("/metrics", promhttp.Handler())
+    
+    // Use with popular routers (e.g., gorilla/mux, chi)
+    // router := chi.NewRouter()
+    // router.Use(middleware.Logger)
+    // router.Mount("/api", gateway)
+    
+    log.Fatal(http.ListenAndServe(":8080", mux))
+}
+```
+
+This flexibility allows you to:
+- Add authentication, rate limiting, or CORS handling
+- Serve your RPC API alongside REST endpoints
+- Integrate with observability tools (Prometheus, OpenTelemetry)
+- Use popular Go web frameworks and routers
+- Implement custom request/response processing
+
 ## 🏗️ Architecture
 
 Hyperway implements a schema-driven architecture where:
@@ -510,6 +587,7 @@ Hyperway implements a schema-driven architecture where:
 ### Technical Foundation
 - **High-Performance Parsing**: Leverages hyperpb for optimized message handling
 - **Multi-Protocol Gateway**: Unified implementation of gRPC, Connect, and gRPC-Web
+- **Standard http.Handler Interface**: Seamless integration with Go's HTTP ecosystem
 - **Extensible Middleware**: Interceptors for cross-cutting concerns
 - **Type-Safe by Design**: Compile-time type checking with runtime protocol compliance
 
