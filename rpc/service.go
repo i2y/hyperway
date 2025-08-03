@@ -56,6 +56,12 @@ type ServiceOptions struct {
 	ServiceConfig string
 	// Description is the service-level documentation
 	Description string
+	// EnableJSONRPC enables JSON-RPC 2.0 support
+	EnableJSONRPC bool
+	// JSONRPCPath is the path to serve JSON-RPC requests (default: "/jsonrpc")
+	JSONRPCPath string
+	// JSONRPCBatchLimit is the maximum number of requests in a batch (default: 100)
+	JSONRPCBatchLimit int
 }
 
 // Method represents an RPC method.
@@ -109,6 +115,14 @@ func NewService(name string, opts ...ServiceOption) *Service {
 		svc.packageName = svc.options.Package
 	} else {
 		svc.packageName = name
+	}
+
+	// Set JSON-RPC defaults
+	if svc.options.JSONRPCPath == "" && svc.options.EnableJSONRPC {
+		svc.options.JSONRPCPath = defaultJSONRPCPath
+	}
+	if svc.options.JSONRPCBatchLimit == 0 {
+		svc.options.JSONRPCBatchLimit = 100
 	}
 
 	// Parse service config if provided
@@ -704,6 +718,11 @@ func NewGateway(services ...*Service) (http.Handler, error) {
 			handlers[path] = svc.createHTTPHandler(method)
 		}
 
+		// Add JSON-RPC handler if enabled
+		if svc.options.EnableJSONRPC {
+			handlers[svc.options.JSONRPCPath] = svc.JSONRPCHandler()
+		}
+
 		gatewaySvc := &gateway.Service{
 			Name:        svc.name,
 			Package:     svc.packageName,
@@ -868,6 +887,24 @@ func WithServiceConfig(jsonConfig string) ServiceOption {
 func WithDescription(description string) ServiceOption {
 	return func(o *ServiceOptions) {
 		o.Description = description
+	}
+}
+
+// WithJSONRPC enables JSON-RPC 2.0 support with optional path.
+func WithJSONRPC(path string) ServiceOption {
+	return func(o *ServiceOptions) {
+		o.EnableJSONRPC = true
+		o.JSONRPCPath = path
+		if o.JSONRPCPath == "" {
+			o.JSONRPCPath = defaultJSONRPCPath
+		}
+	}
+}
+
+// WithJSONRPCBatchLimit sets the maximum number of requests in a JSON-RPC batch.
+func WithJSONRPCBatchLimit(limit int) ServiceOption {
+	return func(o *ServiceOptions) {
+		o.JSONRPCBatchLimit = limit
 	}
 }
 
