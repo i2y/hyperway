@@ -2,7 +2,7 @@
 
 **Schema-driven RPC development, redefined for Go.**
 
-Hyperway bridges code-first agility with schema-first discipline. Your Go structs become the single source of truth, dynamically generating Protobuf schemas at runtime. Serve production-ready gRPC and Connect APIs while maintaining the ability to export standard .proto files to share your schema-driven API with any team, any language.
+Hyperway bridges code-first agility with schema-first discipline. Your Go structs become the single source of truth, dynamically generating Protobuf schemas at runtime. Serve production-ready gRPC, Connect, gRPC-Web, and JSON-RPC 2.0 APIs from a single codebase, with automatic OpenAPI documentation, while maintaining the ability to export standard .proto files to share your schema-driven API with any team, any language.
 
 ## 🚀 Why Hyperway?
 
@@ -36,6 +36,7 @@ This hybrid approach maintains the discipline of schema-first development while 
 Hyperway implements multiple RPC protocols with dynamic capabilities:
 - Generates Protobuf schemas from your Go structs at runtime
 - Supports gRPC (Protobuf), Connect RPC (both Protobuf and JSON), gRPC-Web, and JSON-RPC 2.0
+- Automatically generates OpenAPI 3.0 documentation at `/openapi.json`
 - Maintains wire compatibility with standard clients for all protocols
 - Supports unary and server-streaming RPCs
 - Handles both HTTP/1.1 and HTTP/2 (with h2c support)
@@ -142,7 +143,7 @@ func main() {
 
 ## 🧪 Testing Your Service
 
-Your service automatically supports multiple protocols:
+Your service automatically supports multiple protocols and provides OpenAPI documentation:
 
 ### Connect RPC (JSON format)
 ```bash
@@ -184,6 +185,15 @@ buf curl --protocol connect \
   --http2-prior-knowledge \
   --data '{"name":"David","email":"david@example.com"}' \
   http://localhost:8080/user.v1.UserService/CreateUser
+```
+
+### OpenAPI Documentation
+```bash
+# Get OpenAPI 3.0 specification
+curl http://localhost:8080/openapi.json
+
+# View in Swagger UI or any OpenAPI viewer
+# The spec includes all your RPC methods with request/response schemas
 ```
 
 ## 🔄 The Hybrid Approach: Schema-Driven Development in Go
