@@ -38,7 +38,7 @@ func contextMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Add request ID to context
 		ctx := context.WithValue(r.Context(), "request-id", "req-123")
-		
+
 		// Add user ID from header to context
 		if userID := r.Header.Get("X-User-ID"); userID != "" {
 			ctx = context.WithValue(ctx, "user-id", userID)
@@ -77,6 +77,6 @@ func main() {
 	log.Println(`  -H "Content-Type: application/json" \`)
 	log.Println(`  -H "X-User-ID: user-456" \`)
 	log.Println(`  -d '{"name":"Alice"}'`)
-	
+
 	log.Fatal(http.ListenAndServe(":8095", handler))
 }
