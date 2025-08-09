@@ -5,8 +5,17 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"time"
 
 	"github.com/i2y/hyperway/rpc"
+)
+
+// Define context key types to avoid collisions
+type contextKey string
+
+const (
+	requestIDKey contextKey = "request-id"
+	userIDKey    contextKey = "user-id"
 )
 
 // Define request/response types
@@ -23,8 +32,8 @@ type HelloResponse struct {
 // Handler that accesses context values
 func sayHello(ctx context.Context, req *HelloRequest) (*HelloResponse, error) {
 	// Try to get values from context
-	requestID, _ := ctx.Value("request-id").(string)
-	userID, _ := ctx.Value("user-id").(string)
+	requestID, _ := ctx.Value(requestIDKey).(string)
+	userID, _ := ctx.Value(userIDKey).(string)
 
 	return &HelloResponse{
 		Message:   fmt.Sprintf("Hello, %s!", req.Name),
@@ -37,11 +46,11 @@ func sayHello(ctx context.Context, req *HelloRequest) (*HelloResponse, error) {
 func contextMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Add request ID to context
-		ctx := context.WithValue(r.Context(), "request-id", "req-123")
+		ctx := context.WithValue(r.Context(), requestIDKey, "req-123")
 
 		// Add user ID from header to context
 		if userID := r.Header.Get("X-User-ID"); userID != "" {
-			ctx = context.WithValue(ctx, "user-id", userID)
+			ctx = context.WithValue(ctx, userIDKey, userID)
 		}
 
 		// Call next handler with updated context
@@ -78,5 +87,14 @@ func main() {
 	log.Println(`  -H "X-User-ID: user-456" \`)
 	log.Println(`  -d '{"name":"Alice"}'`)
 
-	log.Fatal(http.ListenAndServe(":8095", handler))
+	// Create server with timeouts
+	server := &http.Server{
+		Addr:         ":8095",
+		Handler:      handler,
+		ReadTimeout:  15 * time.Second,
+		WriteTimeout: 15 * time.Second,
+		IdleTimeout:  60 * time.Second,
+	}
+
+	log.Fatal(server.ListenAndServe())
 }
