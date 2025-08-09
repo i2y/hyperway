@@ -92,7 +92,8 @@ func exportAsZip(svc *rpc.Service, zipOutput string) {
 	fdset := svc.GetFileDescriptorSet()
 
 	// Export to ZIP
-	exporter := proto.NewExporter(proto.DefaultExportOptions())
+	opts := proto.DefaultExportOptions()
+	exporter := proto.NewExporter(&opts)
 	zipData, err := exporter.ExportToZip(fdset)
 	if err != nil {
 		log.Fatalf("Failed to create ZIP: %v", err)

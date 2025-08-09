@@ -25,6 +25,35 @@ type ExportOptions struct {
 	SortElements bool
 	// Indent configures the indentation string (default: 2 spaces)
 	Indent string
+	// LanguageOptions contains language-specific options for the proto file
+	LanguageOptions LanguageOptions
+}
+
+// LanguageOptions contains language-specific options for proto files.
+type LanguageOptions struct {
+	// Go options
+	GoPackage string
+
+	// Java options
+	JavaPackage       string
+	JavaOuterClass    string
+	JavaMultipleFiles bool
+
+	// C# options
+	CSharpNamespace string
+
+	// PHP options
+	PhpNamespace         string
+	PhpMetadataNamespace string
+
+	// Ruby options
+	RubyPackage string
+
+	// Python options (usually not needed, but can be specified)
+	PythonPackage string
+
+	// Objective-C/Swift options
+	ObjcClassPrefix string
 }
 
 // DefaultExportOptions returns default export options.
@@ -43,7 +72,7 @@ type Exporter struct {
 }
 
 // NewExporter creates a new proto exporter.
-func NewExporter(opts ExportOptions) *Exporter {
+func NewExporter(opts *ExportOptions) *Exporter {
 	printer := &protoprint.Printer{
 		Compact:                      false,
 		SortElements:                 opts.SortElements,
@@ -52,7 +81,7 @@ func NewExporter(opts ExportOptions) *Exporter {
 	}
 
 	return &Exporter{
-		options: opts,
+		options: *opts,
 		printer: printer,
 	}
 }
@@ -96,6 +125,14 @@ func (e *Exporter) ExportFileDescriptorSet(fdset *descriptorpb.FileDescriptorSet
 			}
 			// Fix proto3 optional fields
 			content = fixProto3Optional(content, fdp)
+		}
+
+		// Insert language-specific options
+		content = e.insertLanguageOptions(content)
+
+		// Ensure file ends with a newline
+		if !strings.HasSuffix(content, "\n") {
+			content += "\n"
 		}
 
 		result[fd.Path()] = content
@@ -150,6 +187,14 @@ func (e *Exporter) ExportFileDescriptorProto(fdp *descriptorpb.FileDescriptorPro
 
 	// Fix proto3 optional fields
 	result = fixProto3Optional(result, fdp)
+
+	// Insert language-specific options
+	result = e.insertLanguageOptions(result)
+
+	// Ensure file ends with a newline
+	if !strings.HasSuffix(result, "\n") {
+		result += "\n"
+	}
 
 	return result, nil
 }
@@ -439,4 +484,181 @@ func (e *Exporter) addWellKnownTypes(fdset *descriptorpb.FileDescriptorSet) *des
 	result.File = append(result.File, fdset.File...)
 
 	return result
+}
+
+// ExportOption is a functional option for configuring ExportOptions.
+type ExportOption func(*ExportOptions)
+
+// WithGoPackage sets the Go package option for exported proto files.
+func WithGoPackage(pkg string) ExportOption {
+	return func(opts *ExportOptions) {
+		opts.LanguageOptions.GoPackage = pkg
+	}
+}
+
+// WithJavaPackage sets the Java package option for exported proto files.
+func WithJavaPackage(pkg string) ExportOption {
+	return func(opts *ExportOptions) {
+		opts.LanguageOptions.JavaPackage = pkg
+	}
+}
+
+// WithJavaOuterClass sets the Java outer classname option for exported proto files.
+func WithJavaOuterClass(className string) ExportOption {
+	return func(opts *ExportOptions) {
+		opts.LanguageOptions.JavaOuterClass = className
+	}
+}
+
+// WithJavaMultipleFiles sets the Java multiple files option for exported proto files.
+func WithJavaMultipleFiles(multiple bool) ExportOption {
+	return func(opts *ExportOptions) {
+		opts.LanguageOptions.JavaMultipleFiles = multiple
+	}
+}
+
+// WithCSharpNamespace sets the C# namespace option for exported proto files.
+func WithCSharpNamespace(ns string) ExportOption {
+	return func(opts *ExportOptions) {
+		opts.LanguageOptions.CSharpNamespace = ns
+	}
+}
+
+// WithPhpNamespace sets the PHP namespace option for exported proto files.
+func WithPhpNamespace(ns string) ExportOption {
+	return func(opts *ExportOptions) {
+		opts.LanguageOptions.PhpNamespace = ns
+	}
+}
+
+// WithPhpMetadataNamespace sets the PHP metadata namespace option for exported proto files.
+func WithPhpMetadataNamespace(ns string) ExportOption {
+	return func(opts *ExportOptions) {
+		opts.LanguageOptions.PhpMetadataNamespace = ns
+	}
+}
+
+// WithRubyPackage sets the Ruby package option for exported proto files.
+func WithRubyPackage(pkg string) ExportOption {
+	return func(opts *ExportOptions) {
+		opts.LanguageOptions.RubyPackage = pkg
+	}
+}
+
+// WithPythonPackage sets the Python package option for exported proto files.
+func WithPythonPackage(pkg string) ExportOption {
+	return func(opts *ExportOptions) {
+		opts.LanguageOptions.PythonPackage = pkg
+	}
+}
+
+// WithObjcClassPrefix sets the Objective-C class prefix option for exported proto files.
+func WithObjcClassPrefix(prefix string) ExportOption {
+	return func(opts *ExportOptions) {
+		opts.LanguageOptions.ObjcClassPrefix = prefix
+	}
+}
+
+// ApplyOptions applies the given options to ExportOptions.
+func (opts *ExportOptions) ApplyOptions(options ...ExportOption) {
+	for _, option := range options {
+		option(opts)
+	}
+}
+
+// insertLanguageOptions inserts language-specific options into the proto content.
+//
+//nolint:gocyclo // This function handles multiple language options which naturally increases complexity
+func (e *Exporter) insertLanguageOptions(content string) string {
+	opts := e.options.LanguageOptions
+
+	// If no options are specified, return content as-is
+	if opts.GoPackage == "" && opts.JavaPackage == "" && opts.CSharpNamespace == "" &&
+		opts.PhpNamespace == "" && opts.RubyPackage == "" && opts.PythonPackage == "" &&
+		opts.ObjcClassPrefix == "" && !opts.JavaMultipleFiles {
+		return content
+	}
+
+	// Skip Well-Known Types - they already have their own language options
+	if strings.Contains(content, "package google.protobuf") {
+		return content
+	}
+
+	const estimatedOptionsLines = 20 // Estimated number of language option lines to add
+
+	lines := strings.Split(content, "\n")
+	result := make([]string, 0, len(lines)+estimatedOptionsLines) // Pre-allocate with extra space for options
+	optionsInserted := false
+
+	for i, line := range lines {
+		result = append(result, line)
+
+		// Insert options after the package statement
+		if !optionsInserted && strings.HasPrefix(strings.TrimSpace(line), "package ") {
+			// Look ahead to see if there are already options or imports
+			hasImportNext := false
+			if i+1 < len(lines) {
+				nextLine := strings.TrimSpace(lines[i+1])
+				hasImportNext = strings.HasPrefix(nextLine, "import ") || nextLine == ""
+			}
+
+			// Add a blank line if the next line is an import
+			if hasImportNext && strings.TrimSpace(line) != "" {
+				result = append(result, "")
+			}
+
+			// Insert Go options
+			if opts.GoPackage != "" {
+				result = append(result, fmt.Sprintf("option go_package = %q;", opts.GoPackage))
+			}
+
+			// Insert Java options
+			if opts.JavaPackage != "" {
+				result = append(result, fmt.Sprintf("option java_package = %q;", opts.JavaPackage))
+			}
+			if opts.JavaOuterClass != "" {
+				result = append(result, fmt.Sprintf("option java_outer_classname = %q;", opts.JavaOuterClass))
+			}
+			if opts.JavaMultipleFiles {
+				result = append(result, "option java_multiple_files = true;")
+			}
+
+			// Insert C# options
+			if opts.CSharpNamespace != "" {
+				result = append(result, fmt.Sprintf("option csharp_namespace = %q;", opts.CSharpNamespace))
+			}
+
+			// Insert PHP options
+			if opts.PhpNamespace != "" {
+				result = append(result, fmt.Sprintf("option php_namespace = %q;", opts.PhpNamespace))
+			}
+			if opts.PhpMetadataNamespace != "" {
+				result = append(result, fmt.Sprintf("option php_metadata_namespace = %q;", opts.PhpMetadataNamespace))
+			}
+
+			// Insert Ruby options
+			if opts.RubyPackage != "" {
+				result = append(result, fmt.Sprintf("option ruby_package = %q;", opts.RubyPackage))
+			}
+
+			// Insert Python options (rarely needed)
+			if opts.PythonPackage != "" {
+				result = append(result, fmt.Sprintf("option py_package = %q;", opts.PythonPackage))
+			}
+
+			// Insert Objective-C/Swift options
+			if opts.ObjcClassPrefix != "" {
+				result = append(result, fmt.Sprintf("option objc_class_prefix = %q;", opts.ObjcClassPrefix))
+			}
+
+			optionsInserted = true
+		}
+	}
+
+	finalContent := strings.Join(result, "\n")
+	// Ensure file ends with a newline
+	if !strings.HasSuffix(finalContent, "\n") {
+		finalContent += "\n"
+	}
+	return finalContent
 }

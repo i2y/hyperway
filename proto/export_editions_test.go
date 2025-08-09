@@ -50,7 +50,8 @@ func TestEditionsSyntaxFix(t *testing.T) {
 			}
 
 			// Export the proto
-			exporter := NewExporter(DefaultExportOptions())
+			opts := DefaultExportOptions()
+			exporter := NewExporter(&opts)
 			content, err := exporter.ExportFileDescriptorProto(fdp)
 			if err != nil {
 				// Skip if edition is not supported yet
@@ -97,7 +98,8 @@ func TestEditionsSyntaxFixInFileDescriptorSet(t *testing.T) {
 		},
 	}
 
-	exporter := NewExporter(DefaultExportOptions())
+	opts := DefaultExportOptions()
+	exporter := NewExporter(&opts)
 	files, err := exporter.ExportFileDescriptorSet(fdset)
 	if err != nil {
 		t.Fatalf("Failed to export FileDescriptorSet: %v", err)

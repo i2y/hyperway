@@ -43,7 +43,8 @@ func (g *Gateway) serveProtoExport(w http.ResponseWriter, r *http.Request) {
 // serveProtoZip exports all proto files as a ZIP archive.
 func (g *Gateway) serveProtoZip(w http.ResponseWriter, _ *http.Request) {
 	// Create exporter
-	exporter := proto.NewExporter(proto.DefaultExportOptions())
+	opts := proto.DefaultExportOptions()
+	exporter := proto.NewExporter(&opts)
 
 	// Export to ZIP
 	zipData, err := exporter.ExportToZip(g.descriptor)
@@ -67,7 +68,8 @@ func (g *Gateway) serveProtoZip(w http.ResponseWriter, _ *http.Request) {
 // listProtoFiles returns a list of available proto files.
 func (g *Gateway) listProtoFiles(w http.ResponseWriter, _ *http.Request) {
 	// Create exporter
-	exporter := proto.NewExporter(proto.DefaultExportOptions())
+	opts := proto.DefaultExportOptions()
+	exporter := proto.NewExporter(&opts)
 
 	// Export all files
 	files, err := exporter.ExportFileDescriptorSet(g.descriptor)
@@ -118,7 +120,8 @@ func (g *Gateway) listProtoFiles(w http.ResponseWriter, _ *http.Request) {
 // serveProtoFile serves a specific proto file.
 func (g *Gateway) serveProtoFile(w http.ResponseWriter, r *http.Request, filename string) {
 	// Create exporter
-	exporter := proto.NewExporter(proto.DefaultExportOptions())
+	opts := proto.DefaultExportOptions()
+	exporter := proto.NewExporter(&opts)
 
 	// Export all files
 	files, err := exporter.ExportFileDescriptorSet(g.descriptor)
@@ -148,13 +151,15 @@ func (g *Gateway) serveProtoFile(w http.ResponseWriter, r *http.Request, filenam
 // ExportProtos exports all proto files from the gateway.
 // This is a programmatic API for exporting proto files.
 func (g *Gateway) ExportProtos() (map[string]string, error) {
-	exporter := proto.NewExporter(proto.DefaultExportOptions())
+	opts := proto.DefaultExportOptions()
+	exporter := proto.NewExporter(&opts)
 	return exporter.ExportFileDescriptorSet(g.descriptor)
 }
 
 // ExportProtosToZip exports all proto files as a ZIP archive.
 // This is a programmatic API for exporting proto files.
 func (g *Gateway) ExportProtosToZip() ([]byte, error) {
-	exporter := proto.NewExporter(proto.DefaultExportOptions())
+	opts := proto.DefaultExportOptions()
+	exporter := proto.NewExporter(&opts)
 	return exporter.ExportToZip(g.descriptor)
 }

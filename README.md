@@ -61,7 +61,7 @@ For detailed benchmarks and performance characteristics, see the [protocol-bench
 ## ✨ Features
 
 - 📋 **Schema-First**: Go types as your schema definition language
-- 📤 **Proto Export**: Generate standard `.proto` files from your running service
+- 📤 **Proto Export**: Generate standard `.proto` files with language-specific options
 - ⚡ **High Performance**: Uses hyperpb for efficient dynamic protobuf parsing
 - 🔄 **Multi-Protocol**: Supports gRPC, Connect RPC, gRPC-Web, and JSON-RPC 2.0 on the same server
 - 🛡️ **Type-Safe**: Full Go type safety with runtime schema generation
@@ -217,11 +217,17 @@ Hyperway automatically generates Protobuf schemas from your types at runtime, ma
 ```bash
 # Generate standard .proto files from your running service
 hyperway proto export --endpoint localhost:8080 --output ./proto
+
+# Export with language-specific options (no manual editing needed!)
+hyperway proto export --endpoint localhost:8080 \
+  --go-package "github.com/example/api;apiv1" \
+  --java-package "com.example.api"
 ```
 
 Now share your schema-driven API with any team:
 - Client SDK generation in any language
 - API documentation and contracts
+- Language-specific options are automatically added
 - Schema registries (BSR, private repos)
 - Standard protobuf tooling compatibility
 
@@ -233,8 +239,19 @@ This hybrid approach delivers the discipline of schema-first design with the agi
 # Export proto files from a running service
 hyperway proto export --endpoint http://localhost:8080 --output ./proto
 
-# Export as ZIP archive
-hyperway proto export --endpoint http://localhost:8080 --format zip --output api.zip
+# Export with language-specific options (no manual editing needed!)
+hyperway proto export --endpoint http://localhost:8080 \
+  --go-package "github.com/example/api;apiv1" \
+  --java-package "com.example.api" \
+  --csharp-namespace "Example.Api"
+
+# Export as ZIP archive with options
+hyperway proto export --endpoint http://localhost:8080 \
+  --format zip --output api.zip \
+  --go-package "github.com/example/api;apiv1"
+
+# See all available language options
+hyperway proto export --help
 ```
 
 ## 📚 Advanced Usage
