@@ -82,6 +82,15 @@ func (s *Service) readGRPCFramedBody(r *http.Request, _ protocolInfo, w http.Res
 	// Parse frame header
 	messageLength := binary.BigEndian.Uint32(frameHeader[frameLengthOffset:frameLengthSize])
 
+	// Check if message size exceeds limit
+	if messageLength > uint32(s.options.MaxReceiveMessageSize) {
+		err := NewError(CodeResourceExhausted,
+			fmt.Sprintf("gRPC message size %d exceeds maximum allowed size %d",
+				messageLength, s.options.MaxReceiveMessageSize))
+		s.writeGRPCError(w, err)
+		return nil, err
+	}
+
 	// Read message body
 	body := make([]byte, messageLength)
 	if _, err := io.ReadFull(r.Body, body); err != nil {
@@ -89,14 +98,48 @@ func (s *Service) readGRPCFramedBody(r *http.Request, _ protocolInfo, w http.Res
 		return nil, err
 	}
 
+	// Check if compressed and validate decompressed size
+	compressionFlag := frameHeader[0]
+	if compressionFlag == 1 {
+		// Get compression type from headers
+		encoding := r.Header.Get("grpc-encoding")
+		if encoding != "" && encoding != "identity" {
+			decompressed, err := s.decompressBodyWithType(body, encoding)
+			if err != nil {
+				s.writeGRPCError(w, NewError(CodeInternal, "failed to decompress gRPC message"))
+				return nil, err
+			}
+			// Check decompressed size
+			if len(decompressed) > s.options.MaxReceiveMessageSize {
+				err := NewError(CodeResourceExhausted,
+					fmt.Sprintf("decompressed gRPC message size %d exceeds maximum allowed size %d",
+						len(decompressed), s.options.MaxReceiveMessageSize))
+				s.writeGRPCError(w, err)
+				return nil, err
+			}
+			return decompressed, nil
+		}
+	}
+
 	return body, nil
 }
 
 // readNonGRPCBody reads a non-gRPC request body
 func (s *Service) readNonGRPCBody(r *http.Request, p protocolInfo, w http.ResponseWriter) ([]byte, error) {
-	body, err := io.ReadAll(r.Body)
+	// Use LimitReader to enforce max receive message size
+	limitedReader := io.LimitReader(r.Body, int64(s.options.MaxReceiveMessageSize)+1)
+	body, err := io.ReadAll(limitedReader)
 	if err != nil {
 		s.writeError(w, r, fmt.Errorf("failed to read body: %w", err))
+		return nil, err
+	}
+
+	// Check if we exceeded the size limit
+	if len(body) > s.options.MaxReceiveMessageSize {
+		err := NewError(CodeResourceExhausted,
+			fmt.Sprintf("message size %d exceeds maximum allowed size %d",
+				len(body), s.options.MaxReceiveMessageSize))
+		s.writeError(w, r, err)
 		return nil, err
 	}
 
@@ -115,11 +158,13 @@ func (s *Service) readNonGRPCBody(r *http.Request, p protocolInfo, w http.Respon
 
 // decompressRequestBody decompresses the request body if needed
 func (s *Service) decompressRequestBody(r *http.Request, body []byte, w http.ResponseWriter) ([]byte, error) {
-	if encoding := r.Header.Get("Content-Encoding"); encoding == CompressionGzip {
-		compressor, ok := GetCompressor(CompressionGzip)
+	encoding := r.Header.Get("Content-Encoding")
+	if encoding != "" && encoding != "identity" {
+		compressor, ok := GetCompressor(encoding)
 		if !ok {
-			s.writeError(w, r, fmt.Errorf("gzip decompression not available"))
-			return nil, fmt.Errorf("gzip decompression not available")
+			err := fmt.Errorf("%s decompression not available", encoding)
+			s.writeError(w, r, err)
+			return nil, err
 		}
 		decompressed, err := compressor.Decompress(body)
 		if err != nil {
@@ -240,6 +285,12 @@ type serverStreamWriter struct {
 	// Batching control
 	lastFlush   time.Time
 	flushPeriod time.Duration
+
+	// Compression settings
+	compressor      Compressor
+	compressionType string // e.g., "gzip", "br", "zstd"
+	canCompress     bool
+	shouldCompress  bool // whether to actually compress messages
 }
 
 func newServerStreamWriter(w http.ResponseWriter, r *http.Request, ctx *handlerContext, p protocolInfo) *serverStreamWriter {
@@ -252,6 +303,30 @@ func newServerStreamWriter(w http.ResponseWriter, r *http.Request, ctx *handlerC
 		flusher:     flusher,
 		flushPeriod: defaultFlushInterval, // Flush every 10ms or after each message in low-throughput scenarios
 		lastFlush:   time.Now(),
+	}
+
+	// Setup compression if client accepts it
+	var acceptEncoding string
+	if p.isGRPC || p.isGRPCWeb {
+		acceptEncoding = r.Header.Get("grpc-accept-encoding")
+		if acceptEncoding == "" {
+			acceptEncoding = r.Header.Get("grpc-encoding")
+		}
+	} else if p.isConnect {
+		acceptEncoding = r.Header.Get("Connect-Accept-Encoding")
+		if acceptEncoding == "" {
+			acceptEncoding = r.Header.Get("Accept-Encoding")
+		}
+	}
+
+	// Select best compressor based on client preferences
+	if acceptEncoding != "" {
+		if c, encoding := selectCompressor(acceptEncoding); c != nil {
+			s.compressor = c
+			s.compressionType = encoding
+			s.shouldCompress = true
+			s.canCompress = true
+		}
 	}
 
 	// Pre-determine encoding function based on protocol
@@ -313,13 +388,34 @@ func (s *serverStreamWriter) Send(msg any) error {
 		return err
 	}
 
+	// Check if encoded message exceeds send size limit
+	if len(data) > s.ctx.options.MaxSendMessageSize {
+		err := NewError(CodeResourceExhausted,
+			fmt.Sprintf("message size %d exceeds maximum send size %d",
+				len(data), s.ctx.options.MaxSendMessageSize))
+		s.mu.Lock()
+		s.err = err
+		s.mu.Unlock()
+		return err
+	}
+
+	// Compress if needed and size threshold met
+	compressed := false
+	if s.shouldCompress && shouldCompress(data) {
+		compressedData, err := s.compressor.Compress(data)
+		if err == nil {
+			data = compressedData
+			compressed = true
+		}
+	}
+
 	// Write the message based on protocol
 	var writeErr error
 	switch {
 	case s.protocol.isConnect:
-		writeErr = s.sendConnectMessage(data)
+		writeErr = s.sendConnectMessage(data, compressed)
 	case s.protocol.isGRPC:
-		writeErr = s.sendGRPCMessage(data)
+		writeErr = s.sendGRPCMessage(data, compressed)
 	default:
 		// Plain HTTP streaming (newline-delimited JSON)
 		_, writeErr = s.w.Write(data)
@@ -355,11 +451,19 @@ func (s *serverStreamWriter) sendHeaders() {
 		}
 		s.w.Header().Set("Content-Type", contentType)
 		s.w.Header().Set("Cache-Control", "no-cache")
+		// Indicate compression support for Connect
+		if s.shouldCompress && s.compressionType != "" {
+			s.w.Header().Set("Connect-Content-Encoding", s.compressionType)
+		}
 		// Don't set Transfer-Encoding explicitly - Go will handle it automatically
 	} else if s.protocol.isGRPC {
 		ct := determineContentType(s.r)
 		s.w.Header().Set("Content-Type", ct)
-		s.w.Header().Set("grpc-accept-encoding", "gzip")
+		s.w.Header().Set("grpc-accept-encoding", "gzip, br, zstd")
+		// Indicate if we're using compression
+		if s.shouldCompress && s.compressionType != "" {
+			s.w.Header().Set("grpc-encoding", s.compressionType)
+		}
 		s.w.Header().Set("Trailer", "grpc-status, grpc-message")
 	}
 
@@ -376,7 +480,7 @@ func (s *serverStreamWriter) sendHeaders() {
 	s.w.WriteHeader(http.StatusOK)
 }
 
-func (s *serverStreamWriter) sendConnectMessage(data []byte) error {
+func (s *serverStreamWriter) sendConnectMessage(data []byte, compressed bool) error {
 	// Connect uses a simple length-prefixed format for streaming
 	// Format: 1 byte flags + 4 bytes length (big-endian) + data
 
@@ -387,7 +491,12 @@ func (s *serverStreamWriter) sendConnectMessage(data []byte) error {
 
 	// Build frame in single buffer
 	frame := (*frameBuf)[:frameSize]
-	frame[0] = 0                                                                            // flags (0 = no compression)
+	// Set compression flag if message is compressed
+	if compressed {
+		frame[0] = 1 // compression flag
+	} else {
+		frame[0] = 0 // no compression
+	}
 	binary.BigEndian.PutUint32(frame[frameLengthOffset:frameLengthSize], uint32(len(data))) //nolint:gosec // length is bounded by message size limits
 	copy(frame[frameHeaderLength:], data)
 
@@ -406,7 +515,7 @@ func (s *serverStreamWriter) sendConnectMessage(data []byte) error {
 	return nil
 }
 
-func (s *serverStreamWriter) sendGRPCMessage(data []byte) error {
+func (s *serverStreamWriter) sendGRPCMessage(data []byte, compressed bool) error {
 	// gRPC frame format: 1 byte flags + 4 bytes length + data
 	frameSize := frameHeaderLength + len(data)
 	frameBuf := s.getFrameBuffer(frameSize)
@@ -414,8 +523,12 @@ func (s *serverStreamWriter) sendGRPCMessage(data []byte) error {
 
 	frame := (*frameBuf)[:frameSize]
 
-	// Flags (0 = no compression)
-	frame[0] = 0
+	// Set compression flag if message is compressed
+	if compressed {
+		frame[0] = 1 // compression flag
+	} else {
+		frame[0] = 0 // no compression
+	}
 
 	// Length (big-endian)
 	binary.BigEndian.PutUint32(frame[1:5], uint32(len(data))) //nolint:gosec // length is bounded by message size limits

@@ -72,6 +72,91 @@ func TestShouldCompress(t *testing.T) {
 	}
 }
 
+func TestBrotliCompressor(t *testing.T) {
+	br := &BrotliCompressor{}
+
+	testCases := []struct {
+		name  string
+		input []byte
+	}{
+		{"empty", []byte{}},
+		{"small", []byte("hello world")},
+		{"large", []byte(strings.Repeat("test data for compression ", 100))},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			// Compress
+			compressed, err := br.Compress(tc.input)
+			if err != nil {
+				t.Fatalf("compress failed: %v", err)
+			}
+
+			// Decompress
+			decompressed, err := br.Decompress(compressed)
+			if err != nil {
+				t.Fatalf("decompress failed: %v", err)
+			}
+
+			// Compare
+			if !bytes.Equal(tc.input, decompressed) {
+				t.Errorf("round trip failed: input len=%d, decompressed len=%d",
+					len(tc.input), len(decompressed))
+			}
+
+			// Check compression actually happened for large data
+			if len(tc.input) > 100 && len(compressed) >= len(tc.input) {
+				t.Errorf("compression didn't reduce size: input=%d, compressed=%d",
+					len(tc.input), len(compressed))
+			}
+		})
+	}
+}
+
+func TestZstdCompressor(t *testing.T) {
+	zstd, err := NewZstdCompressor()
+	if err != nil {
+		t.Fatalf("failed to create zstd compressor: %v", err)
+	}
+
+	testCases := []struct {
+		name  string
+		input []byte
+	}{
+		{"empty", []byte{}},
+		{"small", []byte("hello world")},
+		{"large", []byte(strings.Repeat("test data for compression ", 100))},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			// Compress
+			compressed, err := zstd.Compress(tc.input)
+			if err != nil {
+				t.Fatalf("compress failed: %v", err)
+			}
+
+			// Decompress
+			decompressed, err := zstd.Decompress(compressed)
+			if err != nil {
+				t.Fatalf("decompress failed: %v", err)
+			}
+
+			// Compare
+			if !bytes.Equal(tc.input, decompressed) {
+				t.Errorf("round trip failed: input len=%d, decompressed len=%d",
+					len(tc.input), len(decompressed))
+			}
+
+			// Check compression actually happened for large data
+			if len(tc.input) > 100 && len(compressed) >= len(tc.input) {
+				t.Errorf("compression didn't reduce size: input=%d, compressed=%d",
+					len(tc.input), len(compressed))
+			}
+		})
+	}
+}
+
 func TestCompressorRegistry(t *testing.T) {
 	// Test getting registered gzip compressor
 	gz, ok := GetCompressor(CompressionGzip)
@@ -80,6 +165,24 @@ func TestCompressorRegistry(t *testing.T) {
 	}
 	if gz.Name() != CompressionGzip {
 		t.Errorf("compressor name = %s, want %s", gz.Name(), CompressionGzip)
+	}
+
+	// Test getting registered brotli compressor
+	br, ok := GetCompressor(CompressionBrotli)
+	if !ok {
+		t.Error("brotli compressor not registered")
+	}
+	if br.Name() != CompressionBrotli {
+		t.Errorf("compressor name = %s, want %s", br.Name(), CompressionBrotli)
+	}
+
+	// Test getting registered zstd compressor
+	zstd, ok := GetCompressor(CompressionZstd)
+	if !ok {
+		t.Error("zstd compressor not registered")
+	}
+	if zstd.Name() != CompressionZstd {
+		t.Errorf("compressor name = %s, want %s", zstd.Name(), CompressionZstd)
 	}
 
 	// Test getting non-existent compressor

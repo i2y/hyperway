@@ -44,6 +44,15 @@ type CalculateResponse struct {
 	Error  string  `json:"error,omitempty"`
 }
 
+// Streaming types
+type StreamRequest struct {
+	Count int32 `json:"count" validate:"required,min=1,max=1000"`
+}
+
+type StreamResponse struct {
+	Number int32 `json:"number"`
+}
+
 // Service handlers
 type GreeterService struct {
 	validator *validator.Validate
@@ -97,6 +106,25 @@ func (s *GreeterService) Calculate(ctx context.Context, req *CalculateRequest) (
 	}, nil
 }
 
+// StreamNumbers streams numbers from 0 to count-1
+func (s *GreeterService) StreamNumbers(ctx context.Context, req *StreamRequest, stream rpc.ServerStream[StreamResponse]) error {
+	if err := s.validator.Struct(req); err != nil {
+		return fmt.Errorf("validation error: %w", err)
+	}
+
+	for i := int32(0); i < req.Count; i++ {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+			if err := stream.Send(&StreamResponse{Number: i}); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
 // Static file server for the HTML client
 func serveStaticFiles(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path == "/" {
@@ -123,6 +151,10 @@ func main() {
 	}
 	if err := rpc.Register(svc, "Calculate", greeterService.Calculate); err != nil {
 		log.Fatalf("Failed to register Calculate: %v", err)
+	}
+	// Register streaming method
+	if err := rpc.RegisterServerStream(svc, "StreamNumbers", greeterService.StreamNumbers); err != nil {
+		log.Fatalf("Failed to register StreamNumbers: %v", err)
 	}
 
 	// Create gateway with gRPC-Web support

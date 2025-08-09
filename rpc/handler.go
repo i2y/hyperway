@@ -625,8 +625,8 @@ func (s *Service) handleUnaryRequest(w http.ResponseWriter, r *http.Request, ctx
 		reqCtx = context.WithValue(reqCtx, contextKeyCancel, nil)
 	}
 
-	// Special handling for gRPC
-	if protocolInfo.isGRPC {
+	// Special handling for gRPC and gRPC-Web (they share the same framing)
+	if protocolInfo.isGRPC || protocolInfo.isGRPCWeb {
 		s.handleGRPCRequest(w, r, ctx)
 		return
 	}
@@ -668,19 +668,38 @@ func (s *Service) processUnaryRequest(w http.ResponseWriter, r *http.Request, ct
 func (s *Service) readRequestBody(r *http.Request) ([]byte, error) {
 	defer func() { _ = r.Body.Close() }()
 
-	// Read body using pooled buffer
+	// Read body using pooled buffer with size limit
 	buf := bufferPool.Get().(*bytes.Buffer)
 	buf.Reset()
 	defer bufferPool.Put(buf)
 
-	if _, err := io.Copy(buf, r.Body); err != nil {
+	// Use LimitReader to enforce max receive message size
+	limitedReader := io.LimitReader(r.Body, int64(s.options.MaxReceiveMessageSize)+1)
+	n, err := io.Copy(buf, limitedReader)
+	if err != nil {
 		return nil, fmt.Errorf("failed to read body: %w", err)
+	}
+
+	// Check if we exceeded the size limit
+	if n > int64(s.options.MaxReceiveMessageSize) {
+		return nil, NewError(CodeResourceExhausted,
+			fmt.Sprintf("message size %d exceeds maximum allowed size %d", n, s.options.MaxReceiveMessageSize))
 	}
 	body := buf.Bytes()
 
 	// Handle compression if needed
-	if encoding := r.Header.Get("Content-Encoding"); encoding == CompressionGzip {
-		return s.decompressBody(body)
+	if encoding := r.Header.Get("Content-Encoding"); encoding != "" && encoding != "identity" {
+		decompressed, err := s.decompressBodyWithType(body, encoding)
+		if err != nil {
+			return nil, err
+		}
+		// Check decompressed size as well
+		if len(decompressed) > s.options.MaxReceiveMessageSize {
+			return nil, NewError(CodeResourceExhausted,
+				fmt.Sprintf("decompressed message size %d exceeds maximum allowed size %d",
+					len(decompressed), s.options.MaxReceiveMessageSize))
+		}
+		return decompressed, nil
 	}
 	return body, nil
 }
@@ -690,6 +709,15 @@ func (s *Service) decompressBody(body []byte) ([]byte, error) {
 	compressor, ok := GetCompressor(CompressionGzip)
 	if !ok {
 		return nil, fmt.Errorf("gzip decompression not available")
+	}
+	return compressor.Decompress(body)
+}
+
+// decompressBodyWithType decompresses a body using the specified encoding
+func (s *Service) decompressBodyWithType(body []byte, encoding string) ([]byte, error) {
+	compressor, ok := GetCompressor(encoding)
+	if !ok {
+		return nil, fmt.Errorf("%s decompression not available", encoding)
 	}
 	return compressor.Decompress(body)
 }
@@ -757,18 +785,13 @@ func (s *Service) writeError(w http.ResponseWriter, r *http.Request, err error) 
 }
 
 // writeConnectError writes a Connect protocol error response.
-func (s *Service) writeConnectError(w http.ResponseWriter, r *http.Request, err *Error) {
-	// Determine response content type based on request
-	contentType := r.Header.Get("Content-Type")
-	isProto := contentType == contentTypeProto || contentType == contentTypeConnectProto
+func (s *Service) writeConnectError(w http.ResponseWriter, _ *http.Request, err *Error) {
+	// Connect protocol uses application/json for errors (per spec)
+	w.Header().Set("Content-Type", "application/json")
 
-	if isProto {
-		w.Header().Set("Content-Type", contentTypeProto)
-	} else {
-		w.Header().Set("Content-Type", "application/json")
-	}
-	// Connect protocol always uses HTTP 200 for errors
-	w.WriteHeader(http.StatusOK)
+	// Connect protocol uses appropriate HTTP status codes for errors
+	// This is different from gRPC which always uses 200 OK
+	w.WriteHeader(err.Code.HTTPStatusCode())
 
 	response := map[string]any{
 		"code":    string(err.Code),
@@ -859,7 +882,11 @@ func (s *Service) decodeStructInput(contentType string, body []byte, ctx *handle
 
 // isJSONContentType checks if the content type is JSON
 func (s *Service) isJSONContentType(contentType string) bool {
-	return contentType == "application/json" || contentType == contentTypeConnectJSON
+	return contentType == "application/json" ||
+		contentType == contentTypeConnectJSON ||
+		contentType == "application/grpc+json" ||
+		contentType == "application/grpc-web+json" ||
+		strings.Contains(contentType, "+json")
 }
 
 // isProtobufContentType checks if the content type is protobuf
@@ -983,8 +1010,9 @@ func (s *Service) encodeResponse(w http.ResponseWriter, r *http.Request, output 
 	// Determine content type
 	contentType := determineContentType(r)
 
-	// Check if client accepts compression
-	canCompress := strings.Contains(r.Header.Get("Accept-Encoding"), CompressionGzip)
+	// Check if client accepts compression and which type
+	acceptEncoding := r.Header.Get("Accept-Encoding")
+	compressor, compressionType := selectCompressor(acceptEncoding)
 
 	// Set the content-type header first
 	w.Header().Set("Content-Type", contentType)
@@ -1021,10 +1049,10 @@ func (s *Service) encodeResponse(w http.ResponseWriter, r *http.Request, output 
 	// Handle different content types
 	var err error
 	if isProtobufContentType(contentType) {
-		err = s.encodeProtobufResponse(w, output, ctx, canCompress)
+		err = s.encodeProtobufResponse(w, output, ctx, compressor, compressionType)
 	} else {
 		// Default to JSON
-		err = s.encodeJSONResponse(w, output, canCompress)
+		err = s.encodeJSONResponse(w, output, compressor, compressionType)
 	}
 
 	// Apply trailers after body is written (for non-Connect protocols)
@@ -1097,7 +1125,7 @@ func isProtobufContentType(contentType string) bool {
 }
 
 // encodeProtobufResponse encodes a protobuf response
-func (s *Service) encodeProtobufResponse(w http.ResponseWriter, output any, ctx *handlerContext, canCompress bool) error {
+func (s *Service) encodeProtobufResponse(w http.ResponseWriter, output any, ctx *handlerContext, compressor Compressor, compressionType string) error {
 	var data []byte
 	var err error
 
@@ -1116,8 +1144,15 @@ func (s *Service) encodeProtobufResponse(w http.ResponseWriter, output any, ctx 
 		}
 	}
 
+	// Check if encoded message exceeds send size limit
+	if len(data) > s.options.MaxSendMessageSize {
+		return NewError(CodeResourceExhausted,
+			fmt.Sprintf("response message size %d exceeds maximum send size %d",
+				len(data), s.options.MaxSendMessageSize))
+	}
+
 	// Apply compression if needed
-	data = s.maybeCompress(data, w, canCompress)
+	data = s.maybeCompressWithType(data, w, compressor, compressionType)
 
 	// Content-Type is already set by encodeResponse
 	_, _ = w.Write(data)
@@ -1125,7 +1160,7 @@ func (s *Service) encodeProtobufResponse(w http.ResponseWriter, output any, ctx 
 }
 
 // encodeJSONResponse encodes a JSON response
-func (s *Service) encodeJSONResponse(w http.ResponseWriter, output any, canCompress bool) error {
+func (s *Service) encodeJSONResponse(w http.ResponseWriter, output any, compressor Compressor, compressionType string) error {
 	var data []byte
 	var err error
 
@@ -1144,8 +1179,15 @@ func (s *Service) encodeJSONResponse(w http.ResponseWriter, output any, canCompr
 		}
 	}
 
+	// Check if encoded message exceeds send size limit
+	if len(data) > s.options.MaxSendMessageSize {
+		return NewError(CodeResourceExhausted,
+			fmt.Sprintf("response message size %d exceeds maximum send size %d",
+				len(data), s.options.MaxSendMessageSize))
+	}
+
 	// Apply compression if needed
-	data = s.maybeCompress(data, w, canCompress)
+	data = s.maybeCompressWithType(data, w, compressor, compressionType)
 
 	// Content-Type is already set by encodeResponse
 	_, _ = w.Write(data)
@@ -1172,6 +1214,21 @@ func (s *Service) maybeCompress(data []byte, w http.ResponseWriter, canCompress 
 	return compressedData
 }
 
+// maybeCompressWithType compresses data using the specified compressor
+func (s *Service) maybeCompressWithType(data []byte, w http.ResponseWriter, compressor Compressor, compressionType string) []byte {
+	if compressor == nil || compressionType == "" || !shouldCompress(data) {
+		return data
+	}
+
+	compressedData, err := compressor.Compress(data)
+	if err != nil || len(compressedData) >= len(data) {
+		return data
+	}
+
+	w.Header().Set("Content-Encoding", compressionType)
+	return compressedData
+}
+
 // handleGRPCRequest handles a gRPC protocol request.
 func (s *Service) handleGRPCRequest(w http.ResponseWriter, r *http.Request, ctx *handlerContext) {
 	// gRPC uses a 5-byte message framing
@@ -1194,6 +1251,14 @@ func (s *Service) handleGRPCRequest(w http.ResponseWriter, r *http.Request, ctx 
 		shift8  = 8
 	)
 	messageLength := int(frameHeader[1])<<shift24 | int(frameHeader[2])<<shift16 | int(frameHeader[3])<<shift8 | int(frameHeader[4])
+
+	// Check if message size exceeds receive limit
+	if messageLength > s.options.MaxReceiveMessageSize {
+		s.writeGRPCError(w, NewError(CodeResourceExhausted,
+			fmt.Sprintf("gRPC message size %d exceeds maximum receive size %d",
+				messageLength, s.options.MaxReceiveMessageSize)))
+		return
+	}
 
 	// Get appropriately sized buffer from pool
 	var message []byte
@@ -1231,6 +1296,13 @@ func (s *Service) handleGRPCRequest(w http.ResponseWriter, r *http.Request, ctx 
 		decompressed, err := compressor.Decompress(message)
 		if err != nil {
 			s.writeGRPCError(w, NewErrorf(CodeInternal, "decompression failed: %v", err))
+			return
+		}
+		// Check decompressed size
+		if len(decompressed) > s.options.MaxReceiveMessageSize {
+			s.writeGRPCError(w, NewError(CodeResourceExhausted,
+				fmt.Sprintf("decompressed gRPC message size %d exceeds maximum receive size %d",
+					len(decompressed), s.options.MaxReceiveMessageSize)))
 			return
 		}
 		message = decompressed
@@ -1306,7 +1378,13 @@ func (s *Service) encodeGRPCResponse(w http.ResponseWriter, r *http.Request, out
 	// Determine content type based on request
 	p := detectProtocol(r)
 	contentType := contentTypeGRPCProto
-	if p.wantsJSON {
+	if p.isGRPCWeb {
+		if p.wantsJSON {
+			contentType = "application/grpc-web+json"
+		} else {
+			contentType = "application/grpc-web+proto"
+		}
+	} else if p.wantsJSON {
 		contentType = "application/grpc+json"
 	}
 
@@ -1333,17 +1411,33 @@ func (s *Service) encodeGRPCResponse(w http.ResponseWriter, r *http.Request, out
 		}
 	}
 
+	// Check if encoded message exceeds send size limit
+	if len(data) > s.options.MaxSendMessageSize {
+		// Write error trailers
+		w.Header().Set("grpc-status", fmt.Sprintf("%d", grpcStatusResourceExhausted))
+		w.Header().Set("grpc-message", fmt.Sprintf("response message size %d exceeds maximum send size %d",
+			len(data), s.options.MaxSendMessageSize))
+		return NewError(CodeResourceExhausted,
+			fmt.Sprintf("response message size %d exceeds maximum send size %d",
+				len(data), s.options.MaxSendMessageSize))
+	}
+
 	// Check if compression should be used
 	compressed := false
-	encodingHeader := r.Header.Get("grpc-encoding")
-	if encodingHeader == CompressionGzip && shouldCompress(data) {
-		compressor, ok := GetCompressor(CompressionGzip)
-		if ok {
+	// Check what encoding the client accepts
+	acceptEncoding := r.Header.Get("grpc-accept-encoding")
+	if acceptEncoding == "" {
+		acceptEncoding = r.Header.Get("grpc-encoding")
+	}
+
+	// Select best compressor based on client preferences
+	if shouldCompress(data) {
+		if compressor, encoding := selectCompressor(acceptEncoding); compressor != nil {
 			compressedData, err := compressor.Compress(data)
 			if err == nil && len(compressedData) < len(data) {
 				data = compressedData
 				compressed = true
-				w.Header().Set("grpc-encoding", CompressionGzip)
+				w.Header().Set("grpc-encoding", encoding)
 			}
 		}
 	}

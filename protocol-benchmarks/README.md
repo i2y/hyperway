@@ -1,8 +1,15 @@
-# gRPC Protocol Performance Comparison
+# Protocol Benchmarks: Hyperway vs Connect-go
 
-This directory contains performance benchmarks comparing Hyperway with Connect-Go across different protocols.
+This directory contains comprehensive performance benchmarks comparing Hyperway with Connect-go, the reference implementation of the Connect protocol.
 
-For detailed benchmark results, see [benchmark_results.md](benchmark_results.md).
+## Quick Results
+
+Benchmark measurements show:
+- Different performance characteristics for streaming operations
+- Lower memory usage in tested scenarios
+- Note: Hyperway is still in development and may not implement all Connect-go features
+
+For detailed analysis, see [BENCHMARK_ANALYSIS.md](./BENCHMARK_ANALYSIS.md).
 
 ## Setup
 
@@ -55,22 +62,27 @@ ab -n 100000 -c 100 -k -p /dev/stdin -T "application/json" \
    http://127.0.0.1:8080/grpcweb.example.v1.GreeterService/Greet <<< '{"name":"Test"}'
 ```
 
-## Latest Results
+## Latest Benchmark Results
 
-### Unary RPC Performance
+### Benchmark Measurements
 
-Hyperway shows competitive performance compared to connect-go across all protocols for unary RPCs.
+| Protocol | Time Difference | Memory Difference |
+|----------|------------------|------------------|
+| **gRPC** | -2.9% | -37.9% |
+| **Connect** | -10.5% | -43.1% |
+| **Connect Streaming** | -90.3% | -95.1% |
+| **gRPC Streaming** | -90.6% | -93.8% |
+| **Connect HTTP/2** | -10.1% | -34.2% |
 
-### Streaming RPC Performance
+*Note: Negative values indicate Hyperway used less time/memory in these specific benchmarks. Results may vary based on use case and as Hyperway continues development.*
 
-Hyperway demonstrates significant improvements in streaming performance, with substantially reduced memory usage and lower latency compared to connect-go.
+## Notes
 
-## Summary
-
-Hyperway provides comparable or better performance across all tested protocols, with particular strengths in:
-- Memory efficiency
-- Streaming performance
-- Protocol compatibility
+The benchmarks show differences in performance characteristics between Hyperway and Connect-go. Important considerations:
+- Hyperway is still under active development
+- May not yet implement all features available in Connect-go
+- Performance characteristics may change as development continues
+- These benchmarks represent specific test scenarios
 
 ## Key Improvements Applied
 
