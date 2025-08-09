@@ -1,0 +1,55 @@
+syntax = "proto3";
+
+package user.v1;
+
+option go_package = "github.com/i2y/hyperway/examples/connect-go-client/gen;userv1";
+
+import "google/protobuf/timestamp.proto";
+
+message User {
+  string id = 1;
+
+  string name = 2;
+
+  string email = 3;
+
+  google.protobuf.Timestamp created_at = 4;
+}
+
+message GetUserResponse {
+  optional User user = 1;
+}
+
+message GetUserRequest {
+  string id = 1;
+}
+
+message ListUsersRequest {
+  int32 page_size = 1;
+
+  string page_token = 2;
+}
+
+message ListUsersResponse {
+  repeated User users = 1;
+
+  string next_page_token = 2;
+}
+
+message CreateUserRequest {
+  string name = 1;
+
+  string email = 2;
+}
+
+message CreateUserResponse {
+  optional User user = 1;
+}
+
+service UserService {
+  rpc ListUsers ( ListUsersRequest ) returns ( ListUsersResponse );
+
+  rpc CreateUser ( CreateUserRequest ) returns ( CreateUserResponse );
+
+  rpc GetUser ( GetUserRequest ) returns ( GetUserResponse );
+}

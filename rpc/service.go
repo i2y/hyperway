@@ -373,14 +373,23 @@ func WithReflection(enabled bool) ServiceOption {
 
 // ExportProto exports the service definition as a .proto file.
 func (s *Service) ExportProto() (string, error) {
+	return s.ExportProtoWithOptions()
+}
+
+// ExportProtoWithOptions exports the service definition as a .proto file with language-specific options.
+func (s *Service) ExportProtoWithOptions(options ...hyperproto.ExportOption) (string, error) {
 	// Build the complete FileDescriptorSet including service definition
 	fdset := s.buildCompleteFileDescriptorSet()
 	if fdset == nil || len(fdset.File) == 0 {
 		return "", fmt.Errorf("no proto files to export")
 	}
 
+	// Create export options with defaults
+	exportOpts := hyperproto.DefaultExportOptions()
+	exportOpts.ApplyOptions(options...)
+
 	// Use the proto exporter
-	exporter := hyperproto.NewExporter(hyperproto.DefaultExportOptions())
+	exporter := hyperproto.NewExporter(&exportOpts)
 
 	// Export all files
 	files, err := exporter.ExportFileDescriptorSet(fdset)
@@ -406,14 +415,23 @@ func (s *Service) ExportProto() (string, error) {
 
 // ExportAllProtos exports all proto files including dependencies.
 func (s *Service) ExportAllProtos() (map[string]string, error) {
+	return s.ExportAllProtosWithOptions()
+}
+
+// ExportAllProtosWithOptions exports all proto files including dependencies with language-specific options.
+func (s *Service) ExportAllProtosWithOptions(options ...hyperproto.ExportOption) (map[string]string, error) {
 	// Build the complete FileDescriptorSet including service definition
 	fdset := s.buildCompleteFileDescriptorSet()
 	if fdset == nil || len(fdset.File) == 0 {
 		return nil, fmt.Errorf("no proto files to export")
 	}
 
+	// Create export options with defaults
+	exportOpts := hyperproto.DefaultExportOptions()
+	exportOpts.ApplyOptions(options...)
+
 	// Use the proto exporter
-	exporter := hyperproto.NewExporter(hyperproto.DefaultExportOptions())
+	exporter := hyperproto.NewExporter(&exportOpts)
 
 	return exporter.ExportFileDescriptorSet(fdset)
 }

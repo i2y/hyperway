@@ -49,6 +49,18 @@ type protoExportOptions struct {
 	includeComments bool
 	sortElements    bool
 	timeout         time.Duration
+
+	// Language-specific options
+	goPackage            string
+	javaPackage          string
+	javaOuterClass       string
+	javaMultipleFiles    bool
+	csharpNamespace      string
+	phpNamespace         string
+	phpMetadataNamespace string
+	rubyPackage          string
+	pythonPackage        string
+	objcClassPrefix      string
 }
 
 func newProtoExportCommand() *cobra.Command {
@@ -73,7 +85,22 @@ Examples:
   hyperway proto export --endpoint http://localhost:8080 --format zip --output service.zip
 
   # Export without comments and sorted
-  hyperway proto export --endpoint http://localhost:8080 --no-comments --sort`,
+  hyperway proto export --endpoint http://localhost:8080 --no-comments --sort
+
+  # Export with Go package option
+  hyperway proto export --endpoint http://localhost:8080 --go-package "github.com/example/api;apiv1"
+
+  # Export with Java options
+  hyperway proto export --endpoint http://localhost:8080 \
+    --java-package "com.example.api" \
+    --java-outer-classname "ApiProtos" \
+    --java-multiple-files
+
+  # Export with multiple language options
+  hyperway proto export --endpoint http://localhost:8080 \
+    --go-package "github.com/example/api;apiv1" \
+    --java-package "com.example.api" \
+    --csharp-namespace "Example.Api"`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runProtoExport(opts)
 		},
@@ -86,6 +113,18 @@ Examples:
 	cmd.Flags().BoolVar(&opts.includeComments, "comments", true, "Include comments in proto files")
 	cmd.Flags().BoolVar(&opts.sortElements, "sort", false, "Sort proto elements alphabetically")
 	cmd.Flags().DurationVar(&opts.timeout, "timeout", defaultTimeout, "Request timeout")
+
+	// Language-specific option flags
+	cmd.Flags().StringVar(&opts.goPackage, "go-package", "", "Go package option for generated code")
+	cmd.Flags().StringVar(&opts.javaPackage, "java-package", "", "Java package option for generated code")
+	cmd.Flags().StringVar(&opts.javaOuterClass, "java-outer-classname", "", "Java outer classname option")
+	cmd.Flags().BoolVar(&opts.javaMultipleFiles, "java-multiple-files", false, "Generate separate Java file per message")
+	cmd.Flags().StringVar(&opts.csharpNamespace, "csharp-namespace", "", "C# namespace option")
+	cmd.Flags().StringVar(&opts.phpNamespace, "php-namespace", "", "PHP namespace option")
+	cmd.Flags().StringVar(&opts.phpMetadataNamespace, "php-metadata-namespace", "", "PHP metadata namespace option")
+	cmd.Flags().StringVar(&opts.rubyPackage, "ruby-package", "", "Ruby package option")
+	cmd.Flags().StringVar(&opts.pythonPackage, "python-package", "", "Python package option")
+	cmd.Flags().StringVar(&opts.objcClassPrefix, "objc-class-prefix", "", "Objective-C class prefix option")
 
 	return cmd
 }
@@ -149,13 +188,25 @@ func runProtoExport(opts *protoExportOptions) error {
 		return fmt.Errorf("no proto files could be exported")
 	}
 
-	// Create exporter
+	// Create exporter with language options
 	exportOpts := hyperwayproto.ExportOptions{
 		IncludeComments: opts.includeComments,
 		SortElements:    opts.sortElements,
 		Indent:          "  ",
+		LanguageOptions: hyperwayproto.LanguageOptions{
+			GoPackage:            opts.goPackage,
+			JavaPackage:          opts.javaPackage,
+			JavaOuterClass:       opts.javaOuterClass,
+			JavaMultipleFiles:    opts.javaMultipleFiles,
+			CSharpNamespace:      opts.csharpNamespace,
+			PhpNamespace:         opts.phpNamespace,
+			PhpMetadataNamespace: opts.phpMetadataNamespace,
+			RubyPackage:          opts.rubyPackage,
+			PythonPackage:        opts.pythonPackage,
+			ObjcClassPrefix:      opts.objcClassPrefix,
+		},
 	}
-	exporter := hyperwayproto.NewExporter(exportOpts)
+	exporter := hyperwayproto.NewExporter(&exportOpts)
 
 	// Export based on format
 	switch opts.format {

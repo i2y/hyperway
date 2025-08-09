@@ -99,7 +99,8 @@ func TestTaggedOneofProtoGeneration(t *testing.T) {
 			}
 
 			// Export to proto
-			exporter := proto.NewExporter(proto.DefaultExportOptions())
+			opts := proto.DefaultExportOptions()
+			exporter := proto.NewExporter(&opts)
 			files, err := exporter.ExportFileDescriptorSet(fdset)
 			if err != nil {
 				t.Fatalf("Failed to export proto: %v", err)
