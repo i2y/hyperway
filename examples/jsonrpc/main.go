@@ -55,8 +55,11 @@ func main() {
 	svc := rpc.NewService("CalculatorService",
 		rpc.WithPackage("calculator.v1"),
 		rpc.WithValidation(true),
-		rpc.WithJSONRPC("/api/jsonrpc"),              // Enable JSON-RPC at /api/jsonrpc
-		rpc.WithJSONRPCBatchLimit(defaultBatchLimit), // Limit batch requests
+		rpc.WithProtocols(
+			rpc.WithDefaults(
+				rpc.JSONRPC("/api/jsonrpc", rpc.WithBatchLimit(defaultBatchLimit)),
+			)...,
+		),
 		rpc.WithDescription("A simple calculator service supporting JSON-RPC 2.0"),
 	)
 

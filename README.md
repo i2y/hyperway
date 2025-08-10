@@ -126,7 +126,6 @@ func main() {
     svc := rpc.NewService("UserService", 
         rpc.WithPackage("user.v1"),
         rpc.WithValidation(true),
-        rpc.WithJSONRPC("/jsonrpc"),  // Enable JSON-RPC support
         // New in v0.5.0:
         rpc.WithMaxReceiveMessageSize(10 * 1024 * 1024), // 10MB max receive
         rpc.WithMaxSendMessageSize(10 * 1024 * 1024),    // 10MB max send
@@ -145,6 +144,32 @@ func main() {
 }
 ```
 
+### 🔧 Protocol Configuration
+
+By default, Hyperway enables Connect, gRPC, and gRPC-Web protocols. You can customize this:
+
+```go
+// Enable JSON-RPC in addition to defaults
+svc := rpc.NewService("UserService",
+    rpc.WithProtocols(
+        rpc.WithDefaults(rpc.JSONRPC("/api/jsonrpc"))...,
+    ),
+)
+
+// Use specific protocols only
+svc := rpc.NewService("UserService",
+    rpc.WithProtocols(
+        rpc.Connect(),
+        rpc.JSONRPC("/api"),
+    ),
+)
+
+// Disable specific protocols
+svc := rpc.NewService("UserService",
+    rpc.WithoutGRPCWeb(),  // Disable gRPC-Web
+)
+```
+
 ## 🧪 Testing Your Service
 
 Your service automatically supports multiple protocols and provides OpenAPI documentation:
@@ -158,11 +183,12 @@ curl -X POST http://localhost:8080/user.v1.UserService/CreateUser \
 
 ### JSON-RPC 2.0
 ```bash
-curl -X POST http://localhost:8080/jsonrpc \
+# Note: Requires JSON-RPC to be enabled with WithProtocols()
+curl -X POST http://localhost:8080/api/jsonrpc \
   -H "Content-Type: application/json" \
   -d '{
     "jsonrpc": "2.0",
-    "method": "CreateUser",
+    "method": "UserService.CreateUser",
     "params": {"name":"Alice","email":"alice@example.com"},
     "id": 1
   }'
@@ -856,6 +882,7 @@ MIT License - see [LICENSE](LICENSE) file for details.
 - [x] Multi-compression support: gzip, brotli, zstd (v0.5.0)
 - [x] Configurable message size limits (v0.5.0)
 - [x] Enhanced proto export with language-specific options (v0.5.0)
+- [x] Unified protocol configuration API (v0.6.0)
 
 ### In Progress 🚧
 - [ ] Client-streaming RPC support

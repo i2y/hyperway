@@ -4,8 +4,6 @@ import (
 	"net/http"
 )
 
-const defaultJSONRPCPath = "/jsonrpc"
-
 // JSONRPCHandler returns an HTTP handler for JSON-RPC requests.
 // This handler processes all JSON-RPC requests at a single endpoint.
 func (s *Service) JSONRPCHandler() http.Handler {
@@ -22,15 +20,4 @@ func (s *Service) JSONRPCHandler() http.Handler {
 		// Handle the JSON-RPC request
 		s.handleJSONRPCRequest(w, r, ctx)
 	})
-}
-
-// EnableJSONRPC adds JSON-RPC support to the service at the specified path.
-// If path is empty, it defaults to "/jsonrpc".
-func (s *Service) EnableJSONRPC(path string) {
-	if path == "" {
-		path = defaultJSONRPCPath
-	}
-	// This will be used by the gateway to register the JSON-RPC endpoint
-	s.options.JSONRPCPath = path
-	s.options.EnableJSONRPC = true
 }

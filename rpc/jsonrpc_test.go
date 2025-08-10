@@ -29,7 +29,9 @@ func TestJSONRPCHandler(t *testing.T) {
 	// Create service with JSON-RPC enabled
 	svc := NewService("TestService",
 		WithPackage("test.v1"),
-		WithJSONRPC("/jsonrpc"),
+		WithProtocols(
+			WithDefaults(JSONRPC("/jsonrpc"))...,
+		),
 	)
 
 	// Register test method
