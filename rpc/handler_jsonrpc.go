@@ -221,10 +221,16 @@ func (s *Service) handleJSONRPCBatch(w http.ResponseWriter, r *http.Request, bod
 	}
 
 	// Check batch size limit
-	if len(requests) > s.options.JSONRPCBatchLimit {
+	batchLimit := DefaultJSONRPCBatchLimit
+	if jsonrpcConfig, ok := s.options.EnabledProtocols["jsonrpc"]; ok {
+		if settings, ok := jsonrpcConfig.Settings.(JSONRPCSettings); ok {
+			batchLimit = settings.BatchLimit
+		}
+	}
+	if len(requests) > batchLimit {
 		s.writeJSONRPCError(w, nil, &JSONRPCError{
 			Code:    JSONRPCInvalidRequest,
-			Message: fmt.Sprintf("Batch request exceeds limit of %d", s.options.JSONRPCBatchLimit),
+			Message: fmt.Sprintf("Batch request exceeds limit of %d", batchLimit),
 		})
 		return
 	}

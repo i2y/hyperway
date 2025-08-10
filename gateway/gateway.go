@@ -42,6 +42,8 @@ type Options struct {
 	KeepaliveParams *KeepaliveParameters
 	// KeepaliveEnforcementPolicy configures server-side keepalive enforcement
 	KeepaliveEnforcementPolicy *KeepaliveEnforcementPolicy
+	// EnabledProtocols specifies which protocols are enabled ("connect", "grpc", "grpcweb")
+	EnabledProtocols map[string]bool
 }
 
 // CORSConfig configures CORS settings.

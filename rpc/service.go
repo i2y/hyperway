@@ -56,12 +56,8 @@ type ServiceOptions struct {
 	ServiceConfig string
 	// Description is the service-level documentation
 	Description string
-	// EnableJSONRPC enables JSON-RPC 2.0 support
-	EnableJSONRPC bool
-	// JSONRPCPath is the path to serve JSON-RPC requests (default: "/jsonrpc")
-	JSONRPCPath string
-	// JSONRPCBatchLimit is the maximum number of requests in a batch (default: 100)
-	JSONRPCBatchLimit int
+	// EnabledProtocols specifies which protocols are enabled for this service
+	EnabledProtocols map[string]ProtocolConfig
 	// MaxReceiveMessageSize is the maximum size of a message that can be received (default: 4MB)
 	MaxReceiveMessageSize int
 	// MaxSendMessageSize is the maximum size of a message that can be sent (default: 4MB)
@@ -107,12 +103,43 @@ const (
 	DefaultMaxSendMessageSize = 4 * 1024 * 1024
 )
 
+// defaultServiceOptions returns default service options
+func defaultServiceOptions() ServiceOptions {
+	return ServiceOptions{
+		EnabledProtocols: map[string]ProtocolConfig{
+			"connect": {
+				Name:    "connect",
+				Enabled: true,
+				Settings: ConnectSettings{
+					AllowJSON:  true,
+					AllowProto: true,
+				},
+			},
+			"grpc": {
+				Name:    "grpc",
+				Enabled: true,
+				Settings: GRPCSettings{
+					EnableReflection: true,
+				},
+			},
+			"grpcweb": {
+				Name:     "grpcweb",
+				Enabled:  true,
+				Settings: GRPCWebSettings{},
+			},
+		},
+		MaxReceiveMessageSize: DefaultMaxReceiveMessageSize,
+		MaxSendMessageSize:    DefaultMaxSendMessageSize,
+	}
+}
+
 // NewService creates a new RPC service.
 func NewService(name string, opts ...ServiceOption) *Service {
+	defaultOpts := defaultServiceOptions()
 	svc := &Service{
 		name:            name,
 		methods:         make(map[string]*Method),
-		options:         ServiceOptions{},
+		options:         defaultOpts,
 		validator:       globalValidator, // Reuse global validator
 		handlerCtxCache: make(map[string]*handlerContext),
 	}
@@ -129,21 +156,7 @@ func NewService(name string, opts ...ServiceOption) *Service {
 		svc.packageName = name
 	}
 
-	// Set JSON-RPC defaults
-	if svc.options.JSONRPCPath == "" && svc.options.EnableJSONRPC {
-		svc.options.JSONRPCPath = defaultJSONRPCPath
-	}
-	if svc.options.JSONRPCBatchLimit == 0 {
-		svc.options.JSONRPCBatchLimit = 100
-	}
-
-	// Set message size defaults
-	if svc.options.MaxReceiveMessageSize == 0 {
-		svc.options.MaxReceiveMessageSize = DefaultMaxReceiveMessageSize
-	}
-	if svc.options.MaxSendMessageSize == 0 {
-		svc.options.MaxSendMessageSize = DefaultMaxSendMessageSize
-	}
+	// Message size defaults are now set in defaultServiceOptions()
 
 	// Parse service config if provided
 	if svc.options.ServiceConfig != "" {
@@ -756,9 +769,11 @@ func NewGateway(services ...*Service) (http.Handler, error) {
 			handlers[path] = svc.createHTTPHandler(method)
 		}
 
-		// Add JSON-RPC handler if enabled
-		if svc.options.EnableJSONRPC {
-			handlers[svc.options.JSONRPCPath] = svc.JSONRPCHandler()
+		// Check if JSON-RPC is enabled
+		if jsonrpcConfig, ok := svc.options.EnabledProtocols["jsonrpc"]; ok && jsonrpcConfig.Enabled {
+			if settings, ok := jsonrpcConfig.Settings.(JSONRPCSettings); ok {
+				handlers[settings.Path] = svc.JSONRPCHandler()
+			}
 		}
 
 		gatewaySvc := &gateway.Service{
@@ -772,10 +787,17 @@ func NewGateway(services ...*Service) (http.Handler, error) {
 
 	// Check if any service has reflection enabled
 	enableReflection := false
+	// Collect enabled protocols from all services
+	enabledProtocols := make(map[string]bool)
 	for _, svc := range services {
 		if svc.options.EnableReflection {
 			enableReflection = true
-			break
+		}
+		// Merge enabled protocols
+		for name, config := range svc.options.EnabledProtocols {
+			if config.Enabled {
+				enabledProtocols[name] = true
+			}
 		}
 	}
 
@@ -785,6 +807,7 @@ func NewGateway(services ...*Service) (http.Handler, error) {
 		EnableOpenAPI:    true,
 		OpenAPIPath:      "/openapi.json",
 		CORSConfig:       gateway.DefaultCORSConfig(),
+		EnabledProtocols: enabledProtocols,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create gateway: %w", err)
@@ -928,21 +951,37 @@ func WithDescription(description string) ServiceOption {
 	}
 }
 
-// WithJSONRPC enables JSON-RPC 2.0 support with optional path.
-func WithJSONRPC(path string) ServiceOption {
+// WithProtocols sets the enabled protocols for the service.
+// This replaces the default protocols.
+func WithProtocols(protocols ...Protocol) ServiceOption {
 	return func(o *ServiceOptions) {
-		o.EnableJSONRPC = true
-		o.JSONRPCPath = path
-		if o.JSONRPCPath == "" {
-			o.JSONRPCPath = defaultJSONRPCPath
+		// Clear existing protocols and set new ones
+		o.EnabledProtocols = make(map[string]ProtocolConfig)
+		for _, p := range protocols {
+			config := p.Config()
+			o.EnabledProtocols[config.Name] = config
 		}
 	}
 }
 
-// WithJSONRPCBatchLimit sets the maximum number of requests in a JSON-RPC batch.
-func WithJSONRPCBatchLimit(limit int) ServiceOption {
+// WithoutGRPC disables gRPC protocol
+func WithoutGRPC() ServiceOption {
 	return func(o *ServiceOptions) {
-		o.JSONRPCBatchLimit = limit
+		delete(o.EnabledProtocols, "grpc")
+	}
+}
+
+// WithoutGRPCWeb disables gRPC-Web protocol
+func WithoutGRPCWeb() ServiceOption {
+	return func(o *ServiceOptions) {
+		delete(o.EnabledProtocols, "grpcweb")
+	}
+}
+
+// WithoutConnect disables Connect protocol
+func WithoutConnect() ServiceOption {
+	return func(o *ServiceOptions) {
+		delete(o.EnabledProtocols, "connect")
 	}
 }
 
