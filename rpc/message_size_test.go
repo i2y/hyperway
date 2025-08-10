@@ -238,7 +238,7 @@ func TestMessageSizeLimits(t *testing.T) {
 		}
 
 		// Send compressed request
-		req, err := http.NewRequest("POST", server.URL+"/test.v1.TestService/Echo", bytes.NewReader(compressed))
+		req, err := http.NewRequestWithContext(context.Background(), "POST", server.URL+"/test.v1.TestService/Echo", bytes.NewReader(compressed))
 		if err != nil {
 			t.Fatalf("failed to create request: %v", err)
 		}
@@ -272,7 +272,7 @@ type TestResponse struct {
 
 // sendRequest sends a POST request with JSON body
 func sendRequest(url, body string) (*http.Response, error) {
-	req, err := http.NewRequest("POST", url, strings.NewReader(body))
+	req, err := http.NewRequestWithContext(context.Background(), "POST", url, strings.NewReader(body))
 	if err != nil {
 		return nil, err
 	}
@@ -306,7 +306,7 @@ func TestGRPCMessageSizeLimits(t *testing.T) {
 	t.Run("gRPCReceiveLimit", func(t *testing.T) {
 		// Create a gRPC frame with message larger than 1KB
 		largeMsg := strings.Repeat("x", 2000)
-		msgBytes := []byte(fmt.Sprintf(`{"message":"%s"}`, largeMsg))
+		msgBytes := []byte(fmt.Sprintf(`{"message":%q}`, largeMsg))
 
 		// Build gRPC frame: 1 byte flags + 4 bytes length + message
 		frame := make([]byte, 5+len(msgBytes))
@@ -319,7 +319,7 @@ func TestGRPCMessageSizeLimits(t *testing.T) {
 		copy(frame[5:], msgBytes)
 
 		// Send gRPC request
-		req, err := http.NewRequest("POST", server.URL+"/test.v1.TestService/Echo", bytes.NewReader(frame))
+		req, err := http.NewRequestWithContext(context.Background(), "POST", server.URL+"/test.v1.TestService/Echo", bytes.NewReader(frame))
 		if err != nil {
 			t.Fatalf("failed to create request: %v", err)
 		}

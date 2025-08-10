@@ -75,6 +75,10 @@ const (
 	contentTypeProtobuf     = "application/protobuf"
 	contentTypeXProtobuf    = "application/x-protobuf"
 	contentTypeGRPCProto    = "application/grpc+proto"
+	contentTypeGRPCJSON     = "application/grpc+json"
+	contentTypeGRPCWebJSON  = "application/grpc-web+json"
+	contentTypeGRPCWebProto = "application/grpc-web+proto"
+	encodingIdentity        = "identity"
 )
 
 // grpcStatusCodeMap maps error codes to gRPC status codes.
@@ -688,7 +692,7 @@ func (s *Service) readRequestBody(r *http.Request) ([]byte, error) {
 	body := buf.Bytes()
 
 	// Handle compression if needed
-	if encoding := r.Header.Get("Content-Encoding"); encoding != "" && encoding != "identity" {
+	if encoding := r.Header.Get("Content-Encoding"); encoding != "" && encoding != encodingIdentity {
 		decompressed, err := s.decompressBodyWithType(body, encoding)
 		if err != nil {
 			return nil, err
@@ -704,14 +708,6 @@ func (s *Service) readRequestBody(r *http.Request) ([]byte, error) {
 	return body, nil
 }
 
-// decompressBody decompresses a gzip-compressed body
-func (s *Service) decompressBody(body []byte) ([]byte, error) {
-	compressor, ok := GetCompressor(CompressionGzip)
-	if !ok {
-		return nil, fmt.Errorf("gzip decompression not available")
-	}
-	return compressor.Decompress(body)
-}
 
 // decompressBodyWithType decompresses a body using the specified encoding
 func (s *Service) decompressBodyWithType(body []byte, encoding string) ([]byte, error) {
@@ -882,10 +878,10 @@ func (s *Service) decodeStructInput(contentType string, body []byte, ctx *handle
 
 // isJSONContentType checks if the content type is JSON
 func (s *Service) isJSONContentType(contentType string) bool {
-	return contentType == "application/json" ||
+	return contentType == contentTypeJSON ||
 		contentType == contentTypeConnectJSON ||
-		contentType == "application/grpc+json" ||
-		contentType == "application/grpc-web+json" ||
+		contentType == contentTypeGRPCJSON ||
+		contentType == contentTypeGRPCWebJSON ||
 		strings.Contains(contentType, "+json")
 }
 
@@ -1074,15 +1070,15 @@ func determineContentType(r *http.Request) string {
 	// Handle gRPC-Web
 	if p.isGRPCWeb {
 		if p.wantsJSON {
-			return "application/grpc-web+json"
+			return contentTypeGRPCWebJSON
 		}
-		return "application/grpc-web+proto"
+		return contentTypeGRPCWebProto
 	}
 
 	// Handle gRPC
 	if p.isGRPC {
 		if p.wantsJSON {
-			return "application/grpc+json"
+			return contentTypeGRPCJSON
 		}
 		return contentTypeGRPCProto
 	}
@@ -1090,9 +1086,9 @@ func determineContentType(r *http.Request) string {
 	// Handle Connect
 	if p.isConnect {
 		if p.wantsJSON {
-			return "application/json"
+			return contentTypeJSON
 		}
-		return "application/proto"
+		return contentTypeProto
 	}
 
 	// Default based on Accept header
@@ -1194,25 +1190,6 @@ func (s *Service) encodeJSONResponse(w http.ResponseWriter, output any, compress
 	return nil
 }
 
-// maybeCompress compresses data if conditions are met
-func (s *Service) maybeCompress(data []byte, w http.ResponseWriter, canCompress bool) []byte {
-	if !canCompress || !shouldCompress(data) {
-		return data
-	}
-
-	compressor, ok := GetCompressor(CompressionGzip)
-	if !ok {
-		return data
-	}
-
-	compressedData, err := compressor.Compress(data)
-	if err != nil || len(compressedData) >= len(data) {
-		return data
-	}
-
-	w.Header().Set("Content-Encoding", CompressionGzip)
-	return compressedData
-}
 
 // maybeCompressWithType compresses data using the specified compressor
 func (s *Service) maybeCompressWithType(data []byte, w http.ResponseWriter, compressor Compressor, compressionType string) []byte {
@@ -1380,12 +1357,12 @@ func (s *Service) encodeGRPCResponse(w http.ResponseWriter, r *http.Request, out
 	contentType := contentTypeGRPCProto
 	if p.isGRPCWeb {
 		if p.wantsJSON {
-			contentType = "application/grpc-web+json"
+			contentType = contentTypeGRPCWebJSON
 		} else {
-			contentType = "application/grpc-web+proto"
+			contentType = contentTypeGRPCWebProto
 		}
 	} else if p.wantsJSON {
-		contentType = "application/grpc+json"
+		contentType = contentTypeGRPCJSON
 	}
 
 	// Set gRPC headers

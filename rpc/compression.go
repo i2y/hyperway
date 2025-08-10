@@ -146,7 +146,7 @@ func shouldCompress(data []byte) bool {
 
 // selectCompressor selects the best available compressor based on Accept-Encoding header
 // Priority: zstd > br > gzip
-func selectCompressor(acceptEncoding string) (Compressor, string) {
+func selectCompressor(acceptEncoding string) (compressor Compressor, encoding string) {
 	// Check in priority order
 	compressionPriority := []string{
 		CompressionZstd,   // Zstandard has best compression ratio and speed

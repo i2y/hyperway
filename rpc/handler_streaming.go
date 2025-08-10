@@ -83,7 +83,7 @@ func (s *Service) readGRPCFramedBody(r *http.Request, _ protocolInfo, w http.Res
 	messageLength := binary.BigEndian.Uint32(frameHeader[frameLengthOffset:frameLengthSize])
 
 	// Check if message size exceeds limit
-	if messageLength > uint32(s.options.MaxReceiveMessageSize) {
+	if int(messageLength) > s.options.MaxReceiveMessageSize {
 		err := NewError(CodeResourceExhausted,
 			fmt.Sprintf("gRPC message size %d exceeds maximum allowed size %d",
 				messageLength, s.options.MaxReceiveMessageSize))
@@ -103,7 +103,7 @@ func (s *Service) readGRPCFramedBody(r *http.Request, _ protocolInfo, w http.Res
 	if compressionFlag == 1 {
 		// Get compression type from headers
 		encoding := r.Header.Get("grpc-encoding")
-		if encoding != "" && encoding != "identity" {
+		if encoding != "" && encoding != encodingIdentity {
 			decompressed, err := s.decompressBodyWithType(body, encoding)
 			if err != nil {
 				s.writeGRPCError(w, NewError(CodeInternal, "failed to decompress gRPC message"))
