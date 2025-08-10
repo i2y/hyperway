@@ -107,23 +107,23 @@ func main() {
 		rpc.WithReflection(true))
 
 	// Create service instance
-	handler := &greeterService{}
+	greeter := &greeterService{}
 
 	// Register methods
 	rpc.MustRegisterMethod(svc,
-		rpc.NewMethod("Greet", handler.Greet).
+		rpc.NewMethod("Greet", greeter.Greet).
 			In(GreetRequest{}).
 			Out(GreetResponse{}),
-		rpc.NewMethod("Calculate", handler.Calculate).
+		rpc.NewMethod("Calculate", greeter.Calculate).
 			In(CalculateRequest{}).
 			Out(CalculateResponse{}),
 	)
 
 	// Register streaming method
-	rpc.MustRegisterServerStream(svc, "StreamNumbers", handler.StreamNumbers)
+	rpc.MustRegisterServerStream(svc, "StreamNumbers", greeter.StreamNumbers)
 
-	// Create gateway
-	gateway, err := rpc.NewGateway(svc)
+	// Create HTTP handler
+	handler, err := rpc.NewHandler(svc)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -132,7 +132,7 @@ func main() {
 	h2s := &http2.Server{}
 	server := &http.Server{
 		Addr:    ":8080",
-		Handler: h2c.NewHandler(gateway, h2s),
+		Handler: h2c.NewHandler(handler, h2s),
 	}
 
 	log.Println("Hyperway benchmark server starting on :8080")

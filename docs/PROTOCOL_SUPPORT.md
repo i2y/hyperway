@@ -4,7 +4,7 @@ This document clarifies the exact protocol support in Hyperway.
 
 ## Supported Protocols
 
-Hyperway supports three RPC protocols:
+Hyperway supports four RPC protocols:
 
 ### 1. gRPC Protocol
 - **Wire Format**: Protobuf binary only
@@ -34,6 +34,17 @@ Hyperway supports three RPC protocols:
 - **Browser Support**: ✅ Full support without proxy
 - **Testing Tool**: Browser clients, gRPC-Web libraries
 
+### 4. JSON-RPC 2.0 Protocol
+- **Wire Format**: JSON only
+- **Transport**: HTTP/1.1 and HTTP/2
+- **Content-Type**: `application/json`
+- **Features**:
+  - Single requests with id
+  - Batch requests (multiple calls in one request)
+  - Notifications (no response expected)
+- **Path**: Configurable (e.g., `/api/jsonrpc`)
+- **Testing Tool**: curl, any HTTP client
+
 ## What About "REST API" Support?
 
 **Important**: Hyperway does NOT provide generic REST API support. When documentation mentions "REST", it specifically refers to Connect RPC's JSON format, which:
@@ -54,14 +65,15 @@ However, the actual API endpoints follow RPC conventions, not REST conventions.
 
 ## Protocol Comparison
 
-| Feature | gRPC | Connect RPC | gRPC-Web |
-|---------|------|-------------|----------|
-| Binary Format | ✅ Protobuf | ✅ Protobuf | ✅ Protobuf |
-| JSON Format | ❌ | ✅ | ❌ |
-| Base64 Encoding | ❌ | ❌ | ✅ |
-| HTTP/1.1 | ❌ | ✅ | ✅ |
-| HTTP/2 | ✅ | ✅ | ✅ |
-| Streaming | ❌ (planned) | ❌ (planned) | ❌ (unary only) |
+| Feature | gRPC | Connect RPC | gRPC-Web | JSON-RPC 2.0 |
+|---------|------|-------------|----------|--------------|
+| Binary Format | ✅ Protobuf | ✅ Protobuf | ✅ Protobuf | ❌ |
+| JSON Format | ❌ | ✅ | ❌ | ✅ |
+| Base64 Encoding | ❌ | ❌ | ✅ | ❌ |
+| HTTP/1.1 | ❌ | ✅ | ✅ | ✅ |
+| HTTP/2 | ✅ | ✅ | ✅ | ✅ |
+| Streaming | ✅ Server | ✅ Server | ❌ | ❌ |
+| Batch Requests | ❌ | ❌ | ❌ | ✅ |
 | Web Browser Support | ❌ | ✅ | ✅ |
 | CORS Support | ❌ | ✅ | ✅ |
 | grpcurl Support | ✅ | ❌ | ❌ |

@@ -29,18 +29,18 @@ func setupTestServer(t *testing.T) *httptest.Server {
 	rpc.MustRegister(svc, "UpdateUser", userService.UpdateUser)
 	rpc.MustRegister(svc, "DeleteUser", userService.DeleteUser)
 
-	gateway, err := rpc.NewGateway(svc)
+	handler, err := rpc.NewHandler(svc)
 	if err != nil {
-		t.Fatalf("Failed to create gateway: %v", err)
+		t.Fatalf("Failed to create handler: %v", err)
 	}
 
 	mux := http.NewServeMux()
-	mux.Handle("/", gateway)
+	mux.Handle("/", handler)
 
 	h2s := &http2.Server{}
-	handler := h2c.NewHandler(mux, h2s)
+	h2Handler := h2c.NewHandler(mux, h2s)
 
-	testServer := httptest.NewServer(handler)
+	testServer := httptest.NewServer(h2Handler)
 	t.Cleanup(testServer.Close)
 
 	return testServer
@@ -266,18 +266,18 @@ func BenchmarkCreateUser(b *testing.B) {
 	rpc.MustRegister(svc, "UpdateUser", userService.UpdateUser)
 	rpc.MustRegister(svc, "DeleteUser", userService.DeleteUser)
 
-	gateway, err := rpc.NewGateway(svc)
+	handler, err := rpc.NewHandler(svc)
 	if err != nil {
-		b.Fatalf("Failed to create gateway: %v", err)
+		b.Fatalf("Failed to create handler: %v", err)
 	}
 
 	mux := http.NewServeMux()
-	mux.Handle("/", gateway)
+	mux.Handle("/", handler)
 
 	h2s := &http2.Server{}
-	handler := h2c.NewHandler(mux, h2s)
+	h2Handler := h2c.NewHandler(mux, h2s)
 
-	testServer := httptest.NewServer(handler)
+	testServer := httptest.NewServer(h2Handler)
 	defer testServer.Close()
 
 	userClient := client.NewHTTPUserServiceClient(testServer.URL)
@@ -312,18 +312,18 @@ func BenchmarkGetUser(b *testing.B) {
 	rpc.MustRegister(svc, "UpdateUser", userService.UpdateUser)
 	rpc.MustRegister(svc, "DeleteUser", userService.DeleteUser)
 
-	gateway, err := rpc.NewGateway(svc)
+	handler, err := rpc.NewHandler(svc)
 	if err != nil {
-		b.Fatalf("Failed to create gateway: %v", err)
+		b.Fatalf("Failed to create handler: %v", err)
 	}
 
 	mux := http.NewServeMux()
-	mux.Handle("/", gateway)
+	mux.Handle("/", handler)
 
 	h2s := &http2.Server{}
-	handler := h2c.NewHandler(mux, h2s)
+	h2Handler := h2c.NewHandler(mux, h2s)
 
-	testServer := httptest.NewServer(handler)
+	testServer := httptest.NewServer(h2Handler)
 	defer testServer.Close()
 
 	userClient := client.NewHTTPUserServiceClient(testServer.URL)

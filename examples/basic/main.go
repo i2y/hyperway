@@ -76,15 +76,15 @@ func main() {
 		log.Fatalf("Failed to register GetUser: %v", err)
 	}
 
-	// Create gateway
-	gateway, err := rpc.NewGateway(svc)
+	// Create handler
+	handler, err := rpc.NewHandler(svc)
 	if err != nil {
-		log.Fatalf("Failed to create gateway: %v", err)
+		log.Fatalf("Failed to create handler: %v", err)
 	}
 
 	// Create HTTP server
 	mux := http.NewServeMux()
-	mux.Handle("/", gateway)
+	mux.Handle("/", handler)
 
 	// Start server
 	log.Println("Server starting on :8091")
@@ -95,11 +95,11 @@ func main() {
 
 	// Use h2c (HTTP/2 without TLS) for gRPC reflection support
 	h2s := &http2.Server{}
-	handler := h2c.NewHandler(mux, h2s)
+	h2Handler := h2c.NewHandler(mux, h2s)
 
 	server := &http.Server{
 		Addr:              ":8091",
-		Handler:           handler,
+		Handler:           h2Handler,
 		ReadTimeout:       httpReadTimeout,
 		WriteTimeout:      httpWriteTimeout,
 		IdleTimeout:       httpIdleTimeout,

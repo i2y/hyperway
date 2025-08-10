@@ -36,14 +36,14 @@ func TestSimpleGRPCWeb(t *testing.T) {
 		t.Fatalf("failed to register: %v", err)
 	}
 
-	// Create gateway
-	gateway, err := rpc.NewGateway(svc)
+	// Create handler
+	handler, err := rpc.NewHandler(svc)
 	if err != nil {
-		t.Fatalf("failed to create gateway: %v", err)
+		t.Fatalf("failed to create handler: %v", err)
 	}
 
 	// Start server
-	server := httptest.NewServer(gateway)
+	server := httptest.NewServer(handler)
 	defer server.Close()
 
 	// Test sending a framed gRPC-Web+JSON request manually

@@ -66,8 +66,8 @@ func main() {
 		log.Fatalf("Failed to register Echo: %v", err)
 	}
 
-	// Create gateway
-	gateway, err := rpc.NewGateway(svc)
+	// Create handler
+	handler, err := rpc.NewHandler(svc)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -75,7 +75,7 @@ func main() {
 	// Create server with h2c to support both HTTP/1.1 and HTTP/2
 	srv := &http.Server{
 		Addr: ":9090",
-		Handler: h2c.NewHandler(gateway, &http2.Server{
+		Handler: h2c.NewHandler(handler, &http2.Server{
 			MaxConcurrentStreams: maxConcurrentStreams,
 		}),
 		ReadTimeout:       httpReadTimeout,

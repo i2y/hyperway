@@ -155,20 +155,20 @@ func main() {
 	}
 
 	// Create and start server
-	gateway, err := rpc.NewGateway(svc)
+	handler, err := rpc.NewHandler(svc)
 	if err != nil {
-		log.Fatalf("Failed to create gateway: %v", err)
+		log.Fatalf("Failed to create handler: %v", err)
 	}
 
 	mux := http.NewServeMux()
-	mux.Handle("/", gateway)
+	mux.Handle("/", handler)
 
 	h2s := &http2.Server{}
-	handler := h2c.NewHandler(mux, h2s)
+	h2Handler := h2c.NewHandler(mux, h2s)
 
 	server := &http.Server{
 		Addr:         ":8888",
-		Handler:      handler,
+		Handler:      h2Handler,
 		ReadTimeout:  30 * time.Second,
 		WriteTimeout: 30 * time.Second,
 	}

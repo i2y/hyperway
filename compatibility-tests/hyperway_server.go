@@ -50,13 +50,13 @@ func CreateHyperwayServer() (http.Handler, error) {
 		return nil, fmt.Errorf("failed to register ServerStreamLarge: %w", err)
 	}
 
-	// Create gateway that supports all protocols
-	gateway, err := rpc.NewGateway(svc)
+	// Create handler that supports all protocols
+	handler, err := rpc.NewHandler(svc)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create gateway: %w", err)
+		return nil, fmt.Errorf("failed to create handler: %w", err)
 	}
 
-	return gateway, nil
+	return handler, nil
 }
 
 // ExportProtoFiles exports the proto files for the compatibility service

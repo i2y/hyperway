@@ -27,12 +27,12 @@ func TestMessageSizeLimits(t *testing.T) {
 			t.Fatalf("failed to register method: %v", err)
 		}
 
-		gateway, err := rpc.NewGateway(svc)
+		handler, err := rpc.NewHandler(svc)
 		if err != nil {
 			t.Fatalf("failed to create gateway: %v", err)
 		}
 
-		server := httptest.NewServer(gateway)
+		server := httptest.NewServer(handler)
 		defer server.Close()
 
 		// Test that a normal message works
@@ -74,12 +74,12 @@ func TestMessageSizeLimits(t *testing.T) {
 			t.Fatalf("failed to register method: %v", err)
 		}
 
-		gateway, err := rpc.NewGateway(svc)
+		handler, err := rpc.NewHandler(svc)
 		if err != nil {
 			t.Fatalf("failed to create gateway: %v", err)
 		}
 
-		server := httptest.NewServer(gateway)
+		server := httptest.NewServer(handler)
 		defer server.Close()
 
 		// Test that a message under 100KB works
@@ -123,12 +123,12 @@ func TestMessageSizeLimits(t *testing.T) {
 			t.Fatalf("failed to register method: %v", err)
 		}
 
-		gateway, err := rpc.NewGateway(svc)
+		handler, err := rpc.NewHandler(svc)
 		if err != nil {
 			t.Fatalf("failed to create gateway: %v", err)
 		}
 
-		server := httptest.NewServer(gateway)
+		server := httptest.NewServer(handler)
 		defer server.Close()
 
 		// Send request that triggers large response
@@ -161,12 +161,12 @@ func TestMessageSizeLimits(t *testing.T) {
 			t.Fatalf("failed to register streaming method: %v", err)
 		}
 
-		gateway, err := rpc.NewGateway(svc)
+		handler, err := rpc.NewHandler(svc)
 		if err != nil {
 			t.Fatalf("failed to create gateway: %v", err)
 		}
 
-		server := httptest.NewServer(gateway)
+		server := httptest.NewServer(handler)
 		defer server.Close()
 
 		// Send request to streaming endpoint
@@ -209,12 +209,12 @@ func TestMessageSizeLimits(t *testing.T) {
 			t.Fatalf("failed to register method: %v", err)
 		}
 
-		gateway, err := rpc.NewGateway(svc)
+		handler, err := rpc.NewHandler(svc)
 		if err != nil {
 			t.Fatalf("failed to create gateway: %v", err)
 		}
 
-		server := httptest.NewServer(gateway)
+		server := httptest.NewServer(handler)
 		defer server.Close()
 
 		// Create a message that compresses well but exceeds limit when decompressed
@@ -295,12 +295,12 @@ func TestGRPCMessageSizeLimits(t *testing.T) {
 		t.Fatalf("failed to register method: %v", err)
 	}
 
-	gateway, err := rpc.NewGateway(svc)
+	handler, err := rpc.NewHandler(svc)
 	if err != nil {
 		t.Fatalf("failed to create gateway: %v", err)
 	}
 
-	server := httptest.NewServer(gateway)
+	server := httptest.NewServer(handler)
 	defer server.Close()
 
 	t.Run("gRPCReceiveLimit", func(t *testing.T) {

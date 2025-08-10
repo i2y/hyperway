@@ -68,15 +68,15 @@ func main() {
 	rpc.MustRegister(svc, "multiply", multiply)
 	rpc.MustRegister(svc, "subtract", subtract)
 
-	// Create gateway - this supports gRPC, Connect, gRPC-Web, and JSON-RPC
-	gateway, err := rpc.NewGateway(svc)
+	// Create handler - this supports gRPC, Connect, gRPC-Web, and JSON-RPC
+	handler, err := rpc.NewHandler(svc)
 	if err != nil {
-		log.Fatalf("Failed to create gateway: %v", err)
+		log.Fatalf("Failed to create handler: %v", err)
 	}
 
 	// Create HTTP server
 	mux := http.NewServeMux()
-	mux.Handle("/", gateway)
+	mux.Handle("/", handler)
 
 	// Add a simple index page
 	mux.HandleFunc("/index.html", func(w http.ResponseWriter, r *http.Request) {

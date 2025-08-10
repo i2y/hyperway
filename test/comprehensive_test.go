@@ -87,14 +87,14 @@ func TestBasicFunctionality(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Create gateway
-	gateway, err := rpc.NewGateway(svc)
+	// Create handler
+	handler, err := rpc.NewHandler(svc)
 	if err != nil {
-		t.Fatalf("Failed to create gateway: %v", err)
+		t.Fatalf("Failed to create handler: %v", err)
 	}
 
 	// Start test server
-	server := httptest.NewServer(h2c.NewHandler(gateway, &http2.Server{}))
+	server := httptest.NewServer(h2c.NewHandler(handler, &http2.Server{}))
 	defer server.Close()
 
 	t.Run("JSON Request", func(t *testing.T) {
@@ -216,12 +216,12 @@ func TestProtocolSupport(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	gateway, err := rpc.NewGateway(svc)
+	handler, err := rpc.NewHandler(svc)
 	if err != nil {
-		t.Fatalf("Failed to create gateway: %v", err)
+		t.Fatalf("Failed to create handler: %v", err)
 	}
 
-	server := httptest.NewServer(h2c.NewHandler(gateway, &http2.Server{}))
+	server := httptest.NewServer(h2c.NewHandler(handler, &http2.Server{}))
 	defer server.Close()
 
 	tests := []struct {
@@ -309,22 +309,22 @@ func TestDataTypeSupport(t *testing.T) {
 		OptNested *NestedStruct `json:"opt_nested,omitempty"`
 	}
 
-	handler := func(ctx context.Context, req *DataTypeTest) (*DataTypeTest, error) {
+	handlerFunc := func(ctx context.Context, req *DataTypeTest) (*DataTypeTest, error) {
 		// Echo back the request
 		return req, nil
 	}
 
 	svc := rpc.NewService("DataTypeService", rpc.WithPackage("datatype.v1"))
-	if err := rpc.Register(svc, "Echo", handler); err != nil {
+	if err := rpc.Register(svc, "Echo", handlerFunc); err != nil {
 		t.Fatal(err)
 	}
 
-	gateway, err := rpc.NewGateway(svc)
+	handler, err := rpc.NewHandler(svc)
 	if err != nil {
-		t.Fatalf("Failed to create gateway: %v", err)
+		t.Fatalf("Failed to create handler: %v", err)
 	}
 
-	server := httptest.NewServer(gateway)
+	server := httptest.NewServer(handler)
 	defer server.Close()
 
 	// Test with all fields populated
@@ -417,12 +417,12 @@ func TestOpenAPIGeneration(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	gateway, err := rpc.NewGateway(svc)
+	handler, err := rpc.NewHandler(svc)
 	if err != nil {
-		t.Fatalf("Failed to create gateway: %v", err)
+		t.Fatalf("Failed to create handler: %v", err)
 	}
 
-	server := httptest.NewServer(gateway)
+	server := httptest.NewServer(handler)
 	defer server.Close()
 
 	// Request OpenAPI spec

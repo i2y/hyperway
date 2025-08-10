@@ -128,19 +128,19 @@ func main() {
 		log.Fatal(err)
 	}
 
-	// Create gateway
-	gateway, err := rpc.NewGateway(svc)
+	// Create handler
+	handler, err := rpc.NewHandler(svc)
 	if err != nil {
 		log.Fatal(err)
 	}
 
 	// Start server with h2c for both HTTP/1.1 and HTTP/2 support
 	h2s := &http2.Server{}
-	handler := h2c.NewHandler(gateway, h2s)
+	h2Handler := h2c.NewHandler(handler, h2s)
 
 	log.Println("Complete Well-Known Types example server running on :8080")
 	log.Println("Test endpoints:")
 	log.Println("- POST http://localhost:8080/complete.v1.CompleteService/ProcessComplete")
 	log.Println("- POST http://localhost:8080/complete.v1.CompleteService/CreateAny")
-	log.Fatal(http.ListenAndServe(":8080", handler))
+	log.Fatal(http.ListenAndServe(":8080", h2Handler))
 }

@@ -99,6 +99,8 @@ import (
     "net/http"
     
     "github.com/i2y/hyperway/rpc"
+    "golang.org/x/net/http2"
+    "golang.org/x/net/http2/h2c"
 )
 
 // Define your API using Go structs
@@ -126,7 +128,6 @@ func main() {
     svc := rpc.NewService("UserService", 
         rpc.WithPackage("user.v1"),
         rpc.WithValidation(true),
-        // New in v0.5.0:
         rpc.WithMaxReceiveMessageSize(10 * 1024 * 1024), // 10MB max receive
         rpc.WithMaxSendMessageSize(10 * 1024 * 1024),    // 10MB max send
     )
@@ -136,11 +137,15 @@ func main() {
         log.Fatal(err)
     }
     
-    // Create gateway - returns a standard http.Handler
-    gateway, _ := rpc.NewGateway(svc)
+    // Create handler - returns a standard http.Handler
+    handler, _ := rpc.NewHandler(svc)
     
-    // Serve using standard net/http (supports all protocols)
-    log.Fatal(http.ListenAndServe(":8080", gateway))
+    // Wrap with h2c to support both HTTP/1.1 and HTTP/2 (required for gRPC)
+    h2s := &http2.Server{}
+    h2Handler := h2c.NewHandler(handler, h2s)
+    
+    // Serve (now supports all protocols including gRPC over HTTP/2)
+    log.Fatal(http.ListenAndServe(":8080", h2Handler))
 }
 ```
 
@@ -351,6 +356,8 @@ import (
     "time"
     
     "github.com/i2y/hyperway/rpc"
+    "golang.org/x/net/http2"
+    "golang.org/x/net/http2/h2c"
 )
 
 // Domain models with validation and well-known types
@@ -426,16 +433,20 @@ func main() {
         log.Fatal(err)
     }
     
-    // Create gateway and serve
-    gateway, err := rpc.NewGateway(svc)
+    // Create handler and serve
+    handler, err := rpc.NewHandler(svc)
     if err != nil {
         log.Fatal(err)
     }
     
+    // Wrap with h2c for HTTP/2 support (required for gRPC)
+    h2s := &http2.Server{}
+    h2Handler := h2c.NewHandler(handler, h2s)
+    
     log.Println("Blog service running on :8080")
     log.Println("- Connect RPC: POST http://localhost:8080/blog.v1.BlogService/CreatePost")
     log.Println("- gRPC: localhost:8080 (with reflection)")
-    log.Fatal(http.ListenAndServe(":8080", gateway))
+    log.Fatal(http.ListenAndServe(":8080", h2Handler))
 }
 ```
 
@@ -454,7 +465,7 @@ rpc.Register(authSvc, "Login", login)
 rpc.Register(adminSvc, "DeleteUser", deleteUser)
 
 // Serve all services on one port
-gateway, _ := rpc.NewGateway(userSvc, authSvc, adminSvc)
+handler, _ := rpc.NewHandler(userSvc, authSvc, adminSvc)
 ```
 
 ### Server Streaming
@@ -470,6 +481,8 @@ import (
     "time"
     
     "github.com/i2y/hyperway/rpc"
+    "golang.org/x/net/http2"
+    "golang.org/x/net/http2/h2c"
 )
 
 // Define request/response types
@@ -523,14 +536,18 @@ func main() {
         log.Fatal(err)
     }
     
-    // Create gateway and serve
-    gateway, err := rpc.NewGateway(svc)
+    // Create handler and serve
+    handler, err := rpc.NewHandler(svc)
     if err != nil {
         log.Fatal(err)
     }
     
+    // Wrap with h2c for HTTP/2 support (required for gRPC streaming)
+    h2s := &http2.Server{}
+    h2Handler := h2c.NewHandler(handler, h2s)
+    
     log.Println("Event service with streaming running on :8080")
-    log.Fatal(http.ListenAndServe(":8080", gateway))
+    log.Fatal(http.ListenAndServe(":8080", h2Handler))
 }
 ```
 
@@ -663,6 +680,8 @@ import (
     
     "github.com/i2y/hyperway/rpc"
     "github.com/google/uuid"
+    "golang.org/x/net/http2"
+    "golang.org/x/net/http2/h2c"
 )
 
 // Request/Response types
@@ -706,18 +725,18 @@ func main() {
     // Register handlers
     rpc.Register(svc, "CreateOrder", createOrder)
     
-    // Create gateway
-    gateway, _ := rpc.NewGateway(svc)
+    // Create handler
+    handler, _ := rpc.NewHandler(svc)
     
     // Create a standard mux
     mux := http.NewServeMux()
     
-    // Chain middleware: auth -> logging -> context -> gateway
+    // Chain middleware: auth -> logging -> context -> handler
     // Context values flow through to RPC handlers
     mux.Handle("/", 
         authMiddleware(
             loggingMiddleware(
-                contextMiddleware(gateway))))
+                contextMiddleware(handler))))
     
     // Add health check endpoint
     mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
@@ -736,10 +755,14 @@ func main() {
     // router := chi.NewRouter()
     // router.Use(middleware.RequestID)
     // router.Use(middleware.Logger)
-    // router.Mount("/api", gateway)
+    // router.Mount("/api", handler)
+    
+    // Wrap with h2c for HTTP/2 support
+    h2s := &http2.Server{}
+    h2Handler := h2c.NewHandler(mux, h2s)
     
     log.Println("Server starting on :8080")
-    log.Fatal(http.ListenAndServe(":8080", mux))
+    log.Fatal(http.ListenAndServe(":8080", h2Handler))
 }
 ```
 

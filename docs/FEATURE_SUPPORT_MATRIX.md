@@ -6,7 +6,7 @@
 - ✅ **Unary RPC** - Single request/response pattern
 - ✅ **Dynamic Schema Generation** - Runtime protobuf schema from Go structs
 - ✅ **Method Registration** - Fluent API for registering RPC methods
-- ✅ **Service Grouping** - Multiple services in single gateway
+- ✅ **Service Grouping** - Multiple services in single handler
 
 ### Type System Support
 #### Basic Types
@@ -38,9 +38,10 @@
 - ✅ **gRPC** - Full protocol support with HTTP/2 (Protobuf only)
 - ✅ **Connect Protocol** - Connect RPC protocol (Protobuf and JSON)
 - ✅ **gRPC-Web** - Browser-friendly protocol with binary and base64 modes
+- ✅ **JSON-RPC 2.0** - Single requests, batch requests, and notifications
 - ✅ **REST/JSON** - Plain HTTP JSON endpoints (via Connect)
 - ✅ **Protocol Auto-Detection** - Based on headers
-- ✅ **Compression** - gzip support for all protocols
+- ✅ **Multi-Compression** - gzip, brotli, zstd support for all protocols
 
 ### Validation
 - ✅ **Input Validation** - Using go-playground/validator
