@@ -69,18 +69,18 @@ func main() {
 		log.Fatalf("Failed to register ProcessMessage: %v", err)
 	}
 
-	// Create gateway
-	gateway, err := rpc.NewGateway(svc)
+	// Create handler
+	handler, err := rpc.NewHandler(svc)
 	if err != nil {
 		log.Fatal(err)
 	}
 
 	// Start server with h2c for both HTTP/1.1 and HTTP/2 support
 	h2s := &http2.Server{}
-	handler := h2c.NewHandler(gateway, h2s)
+	h2Handler := h2c.NewHandler(handler, h2s)
 	srv := &http.Server{
 		Addr:              ":8090",
-		Handler:           handler,
+		Handler:           h2Handler,
 		ReadTimeout:       httpReadTimeout,
 		WriteTimeout:      httpWriteTimeout,
 		IdleTimeout:       httpIdleTimeout,

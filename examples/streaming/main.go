@@ -119,15 +119,15 @@ func main() {
 	rpc.MustRegisterServerStream(svc, "Count", handleCount)
 	rpc.MustRegisterServerStream(svc, "Time", handleTime)
 
-	// Create gateway
-	gateway, err := rpc.NewGateway(svc)
+	// Create handler
+	handler, err := rpc.NewHandler(svc)
 	if err != nil {
 		log.Fatal(err)
 	}
 
 	// Create HTTP server
 	mux := http.NewServeMux()
-	mux.Handle("/", gateway)
+	mux.Handle("/", handler)
 
 	// Add a simple HTML page for testing
 	mux.HandleFunc("/test", func(w http.ResponseWriter, r *http.Request) {
@@ -145,11 +145,11 @@ func main() {
 
 	// Use h2c (HTTP/2 without TLS) for gRPC support
 	h2s := &http2.Server{}
-	handler := h2c.NewHandler(mux, h2s)
+	h2Handler := h2c.NewHandler(mux, h2s)
 
 	server := &http.Server{
 		Addr:              ":8080",
-		Handler:           handler,
+		Handler:           h2Handler,
 		ReadTimeout:       httpReadTimeout,
 		WriteTimeout:      httpWriteTimeout,
 		IdleTimeout:       httpIdleTimeout,

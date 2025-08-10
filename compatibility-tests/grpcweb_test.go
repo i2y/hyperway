@@ -29,14 +29,14 @@ func TestGRPCWebProtocols(t *testing.T) {
 		t.Fatalf("failed to register method: %v", err)
 	}
 
-	// Create gateway
-	gateway, err := rpc.NewGateway(svc)
+	// Create handler
+	handler, err := rpc.NewHandler(svc)
 	if err != nil {
-		t.Fatalf("failed to create gateway: %v", err)
+		t.Fatalf("failed to create handler: %v", err)
 	}
 
 	// Start test server
-	server := httptest.NewServer(gateway)
+	server := httptest.NewServer(handler)
 	defer server.Close()
 
 	t.Run("gRPC-Web+JSON with framing", func(t *testing.T) {

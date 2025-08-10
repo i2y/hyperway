@@ -61,22 +61,22 @@ func main() {
 	rpc.MustRegister(svc, "multiply", multiply)
 	rpc.MustRegister(svc, "subtract", subtract)
 
-	// Create gateway - this supports gRPC, Connect, gRPC-Web, and JSON-RPC
-	gateway, err := rpc.NewGateway(svc)
+	// Create handler - this supports gRPC, Connect, gRPC-Web, and JSON-RPC
+	handler, err := rpc.NewHandler(svc)
 	if err != nil {
-		log.Fatalf("Failed to create gateway: %v", err)
+		log.Fatalf("Failed to create handler: %v", err)
 	}
 
 	// Create HTTP/2 server with h2c (HTTP/2 without TLS)
 	h2s := &http2.Server{}
 
-	// Create handler that supports both HTTP/1.1 and HTTP/2
-	handler := h2c.NewHandler(gateway, h2s)
+	// Create h2c handler that supports both HTTP/1.1 and HTTP/2
+	h2Handler := h2c.NewHandler(handler, h2s)
 
 	addr := ":8084"
 	server := &http.Server{
 		Addr:      addr,
-		Handler:   handler,
+		Handler:   h2Handler,
 		TLSConfig: &tls.Config{
 			// For production, use proper certificates
 			// This is just for testing HTTP/2

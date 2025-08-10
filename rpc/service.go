@@ -748,8 +748,8 @@ func collectNestedTypes(t reflect.Type, collected map[string]reflect.Type, packa
 	}
 }
 
-// NewGateway creates a gateway for the service.
-func NewGateway(services ...*Service) (http.Handler, error) {
+// NewHandler creates an HTTP handler for the service.
+func NewHandler(services ...*Service) (http.Handler, error) {
 	gatewaySvcs := make([]*gateway.Service, 0, len(services))
 
 	for _, svc := range services {

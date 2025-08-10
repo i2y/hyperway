@@ -72,22 +72,22 @@ func main() {
 	fmt.Println(protoContent)
 	fmt.Println("=====================================")
 
-	// Create HTTP gateway
-	gateway, err := rpc.NewGateway(svc)
+	// Create HTTP handler
+	handler, err := rpc.NewHandler(svc)
 	if err != nil {
-		log.Fatalf("Failed to create gateway: %v", err)
+		log.Fatalf("Failed to create handler: %v", err)
 	}
 
 	// Start server with h2c for both HTTP/1.1 and HTTP/2 support
 	h2s := &http2.Server{}
-	handler := h2c.NewHandler(gateway, h2s)
+	h2Handler := h2c.NewHandler(handler, h2s)
 
 	fmt.Println("\nServer running on http://localhost:8080")
 	fmt.Println("Try: curl -X POST http://localhost:8080/example.user.v1.UserService/CreateUser -d '{\"name\":\"Alice\",\"email\":\"alice@example.com\",\"age\":30}'")
 
 	server := &http.Server{
 		Addr:              ":8080",
-		Handler:           handler,
+		Handler:           h2Handler,
 		ReadTimeout:       httpReadTimeout,
 		WriteTimeout:      httpWriteTimeout,
 		IdleTimeout:       httpIdleTimeout,

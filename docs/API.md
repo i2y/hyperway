@@ -3,7 +3,7 @@
 ## Table of Contents
 - [Service Creation](#service-creation)
 - [Method Registration](#method-registration)
-- [Gateway Configuration](#gateway-configuration)
+- [Handler Configuration](#handler-configuration)
 - [Type Mapping](#type-mapping)
 - [Validation](#validation)
 - [Error Handling](#error-handling)
@@ -99,16 +99,16 @@ err := rpc.RegisterMethod(svc,
 )
 ```
 
-## Gateway Configuration
+## Handler Configuration
 
-### `rpc.NewGateway(services ...*Service) (http.Handler, error)`
+### `rpc.NewHandler(services ...*Service) (http.Handler, error)`
 
-Creates a gateway that supports multiple protocols:
+Creates an HTTP handler that supports multiple protocols:
 - gRPC (Protobuf only)
 - Connect RPC (both Protobuf and JSON formats)
 
 ```go
-gateway, err := rpc.NewGateway(userSvc, adminSvc)
+handler, err := rpc.NewHandler(userSvc, adminSvc)
 if err != nil {
     log.Fatal(err)
 }
@@ -116,7 +116,7 @@ if err != nil {
 // Start server with HTTP/2 support
 srv := &http.Server{
     Addr:    ":8080",
-    Handler: h2c.NewHandler(gateway, &http2.Server{}),
+    Handler: h2c.NewHandler(handler, &http2.Server{}),
 }
 ```
 

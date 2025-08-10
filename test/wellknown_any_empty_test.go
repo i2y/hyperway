@@ -25,24 +25,24 @@ func TestEmptyType(t *testing.T) {
 	// Create service
 	svc := rpc.NewService("EmptyService", rpc.WithPackage("test.v1"))
 
-	// Handler
-	handler := func(ctx context.Context, req *EmptyRequest) (*EmptyResponse, error) {
+	// Handler function
+	handlerFunc := func(ctx context.Context, req *EmptyRequest) (*EmptyResponse, error) {
 		return &EmptyResponse{Success: true}, nil
 	}
 
 	// Register handler
-	if err := rpc.Register(svc, "TestEmpty", handler); err != nil {
+	if err := rpc.Register(svc, "TestEmpty", handlerFunc); err != nil {
 		t.Fatal(err)
 	}
 
-	// Create gateway
-	gateway, err := rpc.NewGateway(svc)
+	// Create HTTP handler
+	handler, err := rpc.NewHandler(svc)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	// Create test server
-	server := httptest.NewServer(gateway)
+	server := httptest.NewServer(handler)
 	defer server.Close()
 
 	// Test request
@@ -99,26 +99,26 @@ func TestEmptyTag(t *testing.T) {
 	// Create service
 	svc := rpc.NewService("TaggedEmptyService", rpc.WithPackage("test.v1"))
 
-	// Handler
-	handler := func(ctx context.Context, req *TaggedEmptyRequest) (*TaggedEmptyResponse, error) {
+	// Handler function
+	handlerFunc := func(ctx context.Context, req *TaggedEmptyRequest) (*TaggedEmptyResponse, error) {
 		return &TaggedEmptyResponse{
 			ReceivedNormal: req.NormalString,
 		}, nil
 	}
 
 	// Register handler
-	if err := rpc.Register(svc, "TestTaggedEmpty", handler); err != nil {
+	if err := rpc.Register(svc, "TestTaggedEmpty", handlerFunc); err != nil {
 		t.Fatal(err)
 	}
 
-	// Create gateway
-	gateway, err := rpc.NewGateway(svc)
+	// Create HTTP handler
+	handler, err := rpc.NewHandler(svc)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	// Create test server
-	server := httptest.NewServer(gateway)
+	server := httptest.NewServer(handler)
 	defer server.Close()
 
 	// Test request - for proto:"empty" tag, we send an empty value

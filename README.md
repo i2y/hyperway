@@ -136,11 +136,11 @@ func main() {
         log.Fatal(err)
     }
     
-    // Create gateway - returns a standard http.Handler
-    gateway, _ := rpc.NewGateway(svc)
+    // Create handler - returns a standard http.Handler
+    handler, _ := rpc.NewHandler(svc)
     
     // Serve using standard net/http (supports all protocols)
-    log.Fatal(http.ListenAndServe(":8080", gateway))
+    log.Fatal(http.ListenAndServe(":8080", handler))
 }
 ```
 
@@ -427,7 +427,7 @@ func main() {
     }
     
     // Create gateway and serve
-    gateway, err := rpc.NewGateway(svc)
+    handler, err := rpc.NewHandler(svc)
     if err != nil {
         log.Fatal(err)
     }
@@ -435,7 +435,7 @@ func main() {
     log.Println("Blog service running on :8080")
     log.Println("- Connect RPC: POST http://localhost:8080/blog.v1.BlogService/CreatePost")
     log.Println("- gRPC: localhost:8080 (with reflection)")
-    log.Fatal(http.ListenAndServe(":8080", gateway))
+    log.Fatal(http.ListenAndServe(":8080", handler))
 }
 ```
 
@@ -454,7 +454,7 @@ rpc.Register(authSvc, "Login", login)
 rpc.Register(adminSvc, "DeleteUser", deleteUser)
 
 // Serve all services on one port
-gateway, _ := rpc.NewGateway(userSvc, authSvc, adminSvc)
+handler, _ := rpc.NewHandler(userSvc, authSvc, adminSvc)
 ```
 
 ### Server Streaming
@@ -524,13 +524,13 @@ func main() {
     }
     
     // Create gateway and serve
-    gateway, err := rpc.NewGateway(svc)
+    handler, err := rpc.NewHandler(svc)
     if err != nil {
         log.Fatal(err)
     }
     
     log.Println("Event service with streaming running on :8080")
-    log.Fatal(http.ListenAndServe(":8080", gateway))
+    log.Fatal(http.ListenAndServe(":8080", handler))
 }
 ```
 

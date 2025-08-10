@@ -70,14 +70,14 @@ func main() {
 		log.Fatal(err)
 	}
 
-	// Create gateway
-	gateway, err := rpc.NewGateway(svc)
+	// Create handler
+	handler, err := rpc.NewHandler(svc)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	// Wrap gateway with context middleware
-	handler := contextMiddleware(gateway)
+	// Wrap handler with context middleware
+	wrappedHandler := contextMiddleware(handler)
 
 	// Start server
 	log.Println("Starting server on :8095")
@@ -90,7 +90,7 @@ func main() {
 	// Create server with timeouts
 	server := &http.Server{
 		Addr:         ":8095",
-		Handler:      handler,
+		Handler:      wrappedHandler,
 		ReadTimeout:  15 * time.Second,
 		WriteTimeout: 15 * time.Second,
 		IdleTimeout:  60 * time.Second,

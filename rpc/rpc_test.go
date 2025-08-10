@@ -101,12 +101,12 @@ func TestService_HTTPHandler(t *testing.T) {
 	)
 
 	// Create gateway (which includes HTTP handlers)
-	gateway, err := rpc.NewGateway(svc)
+	handler, err := rpc.NewHandler(svc)
 	if err != nil {
 		t.Fatalf("Failed to create gateway: %v", err)
 	}
 
-	server := httptest.NewServer(gateway)
+	server := httptest.NewServer(handler)
 	defer server.Close()
 
 	// Test JSON request
@@ -152,12 +152,12 @@ func TestService_Validation(t *testing.T) {
 			Out(CreateUserResponse{}),
 	)
 
-	gateway, err := rpc.NewGateway(svc)
+	handler, err := rpc.NewHandler(svc)
 	if err != nil {
 		t.Fatalf("Failed to create gateway: %v", err)
 	}
 
-	server := httptest.NewServer(gateway)
+	server := httptest.NewServer(handler)
 	defer server.Close()
 
 	// Test with invalid data (missing required fields)
@@ -191,12 +191,12 @@ func TestService_ErrorHandling(t *testing.T) {
 			Out(CreateUserResponse{}),
 	)
 
-	gateway, err := rpc.NewGateway(svc)
+	handler, err := rpc.NewHandler(svc)
 	if err != nil {
 		t.Fatalf("Failed to create gateway: %v", err)
 	}
 
-	server := httptest.NewServer(gateway)
+	server := httptest.NewServer(handler)
 	defer server.Close()
 
 	// Test with error-triggering input
@@ -234,12 +234,12 @@ func TestService_Gateway(t *testing.T) {
 	)
 
 	// Create gateway
-	gateway, err := rpc.NewGateway(svc)
+	handler, err := rpc.NewHandler(svc)
 	if err != nil {
 		t.Fatalf("Failed to create gateway: %v", err)
 	}
 
-	server := httptest.NewServer(gateway)
+	server := httptest.NewServer(handler)
 	defer server.Close()
 
 	// Test OpenAPI endpoint
@@ -272,12 +272,12 @@ func TestService_ConnectProtocol(t *testing.T) {
 			Out(CreateUserResponse{}),
 	)
 
-	gateway, err := rpc.NewGateway(svc)
+	handler, err := rpc.NewHandler(svc)
 	if err != nil {
 		t.Fatalf("Failed to create gateway: %v", err)
 	}
 
-	server := httptest.NewServer(gateway)
+	server := httptest.NewServer(handler)
 	defer server.Close()
 
 	// Test Connect protocol request
@@ -339,12 +339,12 @@ func TestTypedRegistration(t *testing.T) {
 	rpc.MustRegister(svc, "GetUser", getUserHandler)
 
 	// Create gateway
-	gateway, err := rpc.NewGateway(svc)
+	handler, err := rpc.NewHandler(svc)
 	if err != nil {
 		t.Fatalf("Failed to create gateway: %v", err)
 	}
 
-	server := httptest.NewServer(gateway)
+	server := httptest.NewServer(handler)
 	defer server.Close()
 
 	// Test that the service works
@@ -385,12 +385,12 @@ func TestService_MultipleServices(t *testing.T) {
 	)
 
 	// Create gateway with both services
-	gateway, err := rpc.NewGateway(userSvc, adminSvc)
+	handler, err := rpc.NewHandler(userSvc, adminSvc)
 	if err != nil {
 		t.Fatalf("Failed to create gateway: %v", err)
 	}
 
-	server := httptest.NewServer(gateway)
+	server := httptest.NewServer(handler)
 	defer server.Close()
 
 	// Test user service endpoint
@@ -448,12 +448,12 @@ func TestConnectTimeoutHeader(t *testing.T) {
 
 	rpc.MustRegister(svc, "Sleep", sleepHandler)
 
-	gateway, err := rpc.NewGateway(svc)
+	handler, err := rpc.NewHandler(svc)
 	if err != nil {
 		t.Fatalf("Failed to create gateway: %v", err)
 	}
 
-	server := httptest.NewServer(gateway)
+	server := httptest.NewServer(handler)
 	defer server.Close()
 
 	t.Run("Timeout Exceeds", func(t *testing.T) {
@@ -551,12 +551,12 @@ func TestErrorCodes(t *testing.T) {
 
 	rpc.MustRegister(svc, "TestError", errorHandler)
 
-	gateway, err := rpc.NewGateway(svc)
+	handler, err := rpc.NewHandler(svc)
 	if err != nil {
 		t.Fatalf("Failed to create gateway: %v", err)
 	}
 
-	server := httptest.NewServer(gateway)
+	server := httptest.NewServer(handler)
 	defer server.Close()
 
 	tests := []struct {
@@ -615,12 +615,12 @@ func BenchmarkService_JSONRequest(b *testing.B) {
 			Out(CreateUserResponse{}),
 	)
 
-	gateway, err := rpc.NewGateway(svc)
+	handler, err := rpc.NewHandler(svc)
 	if err != nil {
 		b.Fatalf("Failed to create gateway: %v", err)
 	}
 
-	server := httptest.NewServer(gateway)
+	server := httptest.NewServer(handler)
 	defer server.Close()
 
 	reqBody := `{"name":"Benchmark User","email":"bench@example.com"}`

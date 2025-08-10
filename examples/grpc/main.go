@@ -170,8 +170,8 @@ func main() {
 		log.Fatalf("Failed to register DeleteUser: %v", err)
 	}
 
-	// Create gateway with gRPC support
-	gateway, err := rpc.NewGateway(svc)
+	// Create handler with gRPC support
+	handler, err := rpc.NewHandler(svc)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -179,7 +179,7 @@ func main() {
 	// Start HTTP/2 server with h2c for gRPC support
 	srv := &http.Server{
 		Addr:              ":9095",
-		Handler:           h2c.NewHandler(gateway, &http2.Server{}),
+		Handler:           h2c.NewHandler(handler, &http2.Server{}),
 		ReadTimeout:       httpReadTimeout,
 		WriteTimeout:      httpWriteTimeout,
 		IdleTimeout:       httpIdleTimeout,

@@ -28,14 +28,14 @@ func TestGRPCWebWithConnectGo(t *testing.T) {
 		t.Fatalf("failed to register method: %v", err)
 	}
 
-	// Create gateway
-	gateway, err := rpc.NewGateway(svc)
+	// Create handler
+	handler, err := rpc.NewHandler(svc)
 	if err != nil {
-		t.Fatalf("failed to create gateway: %v", err)
+		t.Fatalf("failed to create handler: %v", err)
 	}
 
 	// Start test server
-	server := httptest.NewServer(gateway)
+	server := httptest.NewServer(handler)
 	defer server.Close()
 
 	// Test cases with Connect-go client

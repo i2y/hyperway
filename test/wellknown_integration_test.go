@@ -35,8 +35,8 @@ func TestWellKnownTypesIntegration(t *testing.T) {
 	// Create service
 	svc := rpc.NewService("WKTService", rpc.WithPackage("test.v1"))
 
-	// Handler that echoes back the config
-	handler := func(ctx context.Context, req *WKTRequest) (*WKTResponse, error) {
+	// Handler function that echoes back the config
+	handlerFunc := func(ctx context.Context, req *WKTRequest) (*WKTResponse, error) {
 		return &WKTResponse{
 			Success: true,
 			Echo:    req.Config,
@@ -44,18 +44,18 @@ func TestWellKnownTypesIntegration(t *testing.T) {
 	}
 
 	// Register handler
-	if err := rpc.Register(svc, "Process", handler); err != nil {
+	if err := rpc.Register(svc, "Process", handlerFunc); err != nil {
 		t.Fatal(err)
 	}
 
-	// Create gateway
-	gateway, err := rpc.NewGateway(svc)
+	// Create HTTP handler
+	handler, err := rpc.NewHandler(svc)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	// Create test server
-	server := httptest.NewServer(gateway)
+	server := httptest.NewServer(handler)
 	defer server.Close()
 
 	// Test cases
@@ -151,26 +151,26 @@ func TestWellKnownTypesWithMaps(t *testing.T) {
 	// Create service
 	svc := rpc.NewService("MapService", rpc.WithPackage("test.v1"))
 
-	// Handler that counts properties
-	handler := func(ctx context.Context, req *MapRequest) (*MapResponse, error) {
+	// Handler function that counts properties
+	handlerFunc := func(ctx context.Context, req *MapRequest) (*MapResponse, error) {
 		return &MapResponse{
 			Count: len(req.Properties),
 		}, nil
 	}
 
 	// Register handler
-	if err := rpc.Register(svc, "CountProperties", handler); err != nil {
+	if err := rpc.Register(svc, "CountProperties", handlerFunc); err != nil {
 		t.Fatal(err)
 	}
 
-	// Create gateway
-	gateway, err := rpc.NewGateway(svc)
+	// Create HTTP handler
+	handler, err := rpc.NewHandler(svc)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	// Create test server
-	server := httptest.NewServer(gateway)
+	server := httptest.NewServer(handler)
 	defer server.Close()
 
 	// Test request
@@ -232,26 +232,26 @@ func TestFieldMaskProcessing(t *testing.T) {
 	// Create service
 	svc := rpc.NewService("UpdateService", rpc.WithPackage("test.v1"))
 
-	// Handler that returns the paths from field mask
-	handler := func(ctx context.Context, req *UpdateRequest) (*UpdateResponse, error) {
+	// Handler function that returns the paths from field mask
+	handlerFunc := func(ctx context.Context, req *UpdateRequest) (*UpdateResponse, error) {
 		return &UpdateResponse{
 			UpdatedPaths: req.UpdateMask.GetPaths(),
 		}, nil
 	}
 
 	// Register handler
-	if err := rpc.Register(svc, "Update", handler); err != nil {
+	if err := rpc.Register(svc, "Update", handlerFunc); err != nil {
 		t.Fatal(err)
 	}
 
-	// Create gateway
-	gateway, err := rpc.NewGateway(svc)
+	// Create HTTP handler
+	handler, err := rpc.NewHandler(svc)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	// Create test server
-	server := httptest.NewServer(gateway)
+	server := httptest.NewServer(handler)
 	defer server.Close()
 
 	// Test request

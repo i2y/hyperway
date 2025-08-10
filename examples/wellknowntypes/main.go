@@ -138,27 +138,27 @@ func main() {
 		log.Fatal(err)
 	}
 
-	// Create gateway
-	gateway, err := rpc.NewGateway(svc)
+	// Create handler
+	handler, err := rpc.NewHandler(svc)
 	if err != nil {
 		log.Fatal(err)
 	}
 
 	// Start server
 	mux := http.NewServeMux()
-	mux.Handle("/", gateway)
+	mux.Handle("/", handler)
 
 	// Add a test endpoint that demonstrates usage
 	mux.HandleFunc("/test", testEndpoint)
 
 	// Create HTTP/2 server with h2c support
 	h2s := &http2.Server{}
-	handler := h2c.NewHandler(mux, h2s)
+	h2Handler := h2c.NewHandler(mux, h2s)
 
 	log.Println("Well-Known Types example server running on :8080")
 	log.Println("- gRPC/Connect: :8080 (with HTTP/2 h2c support)")
 	log.Println("- Test endpoint: http://localhost:8080/test")
-	log.Fatal(http.ListenAndServe(":8080", handler))
+	log.Fatal(http.ListenAndServe(":8080", h2Handler))
 }
 
 func testEndpoint(w http.ResponseWriter, r *http.Request) {

@@ -92,27 +92,27 @@ func main() {
 	svc := rpc.NewService("AnyTestService",
 		rpc.WithPackage("example.anytest.v1"))
 
-	// Create handler
-	handler := &TestService{}
+	// Create service handler
+	testService := &TestService{}
 
 	// Register method
 	err := rpc.RegisterMethod(svc,
-		rpc.NewMethod("ProcessAny", handler.ProcessAny).
+		rpc.NewMethod("ProcessAny", testService.ProcessAny).
 			In(AnyTestRequest{}).
 			Out(AnyTestResponse{}))
 	if err != nil {
 		log.Fatalf("Failed to register method: %v", err)
 	}
 
-	// Create gateway
-	gateway, err := rpc.NewGateway(svc)
+	// Create HTTP handler
+	handler, err := rpc.NewHandler(svc)
 	if err != nil {
-		log.Fatalf("Failed to create gateway: %v", err)
+		log.Fatalf("Failed to create handler: %v", err)
 	}
 
 	// Start server
 	mux := http.NewServeMux()
-	mux.Handle("/", gateway)
+	mux.Handle("/", handler)
 
 	log.Println("Starting Any type test server on :8080")
 	log.Println("Service registered at: /example.anytest.v1.AnyTestService/ProcessAny")

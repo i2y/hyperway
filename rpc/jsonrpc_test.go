@@ -38,7 +38,7 @@ func TestJSONRPCHandler(t *testing.T) {
 	MustRegister(svc, "SayHello", testHandler)
 
 	// Create gateway
-	gw, err := NewGateway(svc)
+	handler, err := NewHandler(svc)
 	if err != nil {
 		t.Fatalf("Failed to create gateway: %v", err)
 	}
@@ -57,7 +57,7 @@ func TestJSONRPCHandler(t *testing.T) {
 		httpReq.Header.Set("Content-Type", "application/json")
 
 		w := httptest.NewRecorder()
-		gw.ServeHTTP(w, httpReq)
+		handler.ServeHTTP(w, httpReq)
 
 		if w.Code != http.StatusOK {
 			t.Fatalf("Expected status 200, got %d", w.Code)
@@ -104,7 +104,7 @@ func TestJSONRPCHandler(t *testing.T) {
 		httpReq.Header.Set("Content-Type", "application/json")
 
 		w := httptest.NewRecorder()
-		gw.ServeHTTP(w, httpReq)
+		handler.ServeHTTP(w, httpReq)
 
 		if w.Code != http.StatusOK {
 			t.Fatalf("Expected status 200, got %d", w.Code)
@@ -160,7 +160,7 @@ func TestJSONRPCHandler(t *testing.T) {
 		httpReq.Header.Set("Content-Type", "application/json")
 
 		w := httptest.NewRecorder()
-		gw.ServeHTTP(w, httpReq)
+		handler.ServeHTTP(w, httpReq)
 
 		if w.Code != http.StatusNoContent {
 			t.Fatalf("Expected status 204 for notification, got %d", w.Code)
@@ -185,7 +185,7 @@ func TestJSONRPCHandler(t *testing.T) {
 		httpReq.Header.Set("Content-Type", "application/json")
 
 		w := httptest.NewRecorder()
-		gw.ServeHTTP(w, httpReq)
+		handler.ServeHTTP(w, httpReq)
 
 		if w.Code != http.StatusOK {
 			t.Fatalf("Expected status 200, got %d", w.Code)
