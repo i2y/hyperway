@@ -5,8 +5,10 @@ go 1.24
 require (
 	buf.build/go/hyperpb v0.1.0
 	connectrpc.com/grpcreflect v1.3.0
+	github.com/andybalholm/brotli v1.2.0
 	github.com/go-playground/validator/v10 v10.27.0
 	github.com/jhump/protoreflect/v2 v2.0.0-beta.2
+	github.com/klauspost/compress v1.18.0
 	github.com/spf13/cobra v1.9.1
 	golang.org/x/net v0.42.0
 	google.golang.org/grpc v1.74.2
@@ -15,13 +17,11 @@ require (
 
 require (
 	connectrpc.com/connect v1.18.1 // indirect
-	github.com/andybalholm/brotli v1.2.0 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/gabriel-vasile/mimetype v1.4.8 // indirect
 	github.com/go-playground/locales v0.14.1 // indirect
 	github.com/go-playground/universal-translator v0.18.1 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
-	github.com/klauspost/compress v1.18.0 // indirect
 	github.com/kr/text v0.2.0 // indirect
 	github.com/leodido/go-urn v1.4.0 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
