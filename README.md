@@ -165,7 +165,7 @@ svc := rpc.NewService("UserService",
 svc := rpc.NewService("UserService",
     rpc.WithProtocols(
         rpc.Connect(),
-        rpc.JSONRPC("/api"),
+        rpc.JSONRPC("/api/jsonrpc"),
     ),
 )
 
