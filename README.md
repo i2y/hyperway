@@ -70,12 +70,13 @@ For detailed benchmarks and performance characteristics, see the [protocol-bench
 - 🔍 **gRPC Reflection**: Service discovery with dynamic schemas
 - 📚 **OpenAPI Generation**: Automatic API documentation
 - 🌐 **Browser Support**: Native gRPC-Web support without proxy
-- 🗜️ **Compression**: Built-in gzip compression for all protocols
+- 🗜️ **Compression**: Multi-algorithm support (gzip, brotli, zstd) for all protocols
 - 🔁 **Server Streaming**: Support for server-streaming RPCs
 - ⏰ **Well-Known Types**: Support for common Google Well-Known Types (Timestamp, Duration, Empty, Any, Struct, Value, ListValue, FieldMask)
 - 🔌 **Custom Interceptors**: Middleware for logging, auth, metrics, etc.
 - 📦 **Proto3 Optional**: Full support for optional fields
 - 🎯 **Protobuf Editions**: Support for Edition 2023 with features configuration
+- 📏 **Message Size Limits**: Configurable max send/receive message sizes
 
 ## 📦 Installation
 
@@ -126,6 +127,9 @@ func main() {
         rpc.WithPackage("user.v1"),
         rpc.WithValidation(true),
         rpc.WithJSONRPC("/jsonrpc"),  // Enable JSON-RPC support
+        // New in v0.5.0:
+        rpc.WithMaxReceiveMessageSize(10 * 1024 * 1024), // 10MB max receive
+        rpc.WithMaxSendMessageSize(10 * 1024 * 1024),    // 10MB max send
     )
     
     // Register your handlers
@@ -848,6 +852,10 @@ MIT License - see [LICENSE](LICENSE) file for details.
 - [x] Protobuf Editions support (Edition 2023)
 - [x] Additional Well-Known Types (Struct, Value, ListValue, FieldMask)
 - [x] Buffer pooling and concurrency optimizations
+- [x] JSON-RPC 2.0 protocol support (v0.4.0)
+- [x] Multi-compression support: gzip, brotli, zstd (v0.5.0)
+- [x] Configurable message size limits (v0.5.0)
+- [x] Enhanced proto export with language-specific options (v0.5.0)
 
 ### In Progress 🚧
 - [ ] Client-streaming RPC support
@@ -855,7 +863,7 @@ MIT License - see [LICENSE](LICENSE) file for details.
 
 ### Planned 📋
 - [ ] Metrics and tracing integration (OpenTelemetry)
-- [ ] More compression algorithms (br, zstd)
+- [ ] WebSocket support for JSON-RPC
 - [ ] Plugin system for custom protocols
 
 ## ❓ FAQ
