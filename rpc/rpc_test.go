@@ -475,9 +475,9 @@ func TestConnectTimeoutHeader(t *testing.T) {
 		}
 		defer func() { _ = resp.Body.Close() }()
 
-		// Should return 200 with error in body (Connect protocol)
-		if resp.StatusCode != http.StatusOK {
-			t.Errorf("Expected status 200, got %d", resp.StatusCode)
+		// Connect protocol spec: deadline exceeded returns 408 Request Timeout
+		if resp.StatusCode != http.StatusRequestTimeout {
+			t.Errorf("Expected status 408 (Request Timeout), got %d", resp.StatusCode)
 		}
 
 		var result map[string]any
@@ -560,14 +560,15 @@ func TestErrorCodes(t *testing.T) {
 	defer server.Close()
 
 	tests := []struct {
-		name         string
-		inputName    string
-		expectedCode string
+		name           string
+		inputName      string
+		expectedCode   string
+		expectedStatus int
 	}{
-		{"NotFound", "not_found", "not_found"},
-		{"InvalidArgument", "invalid", "invalid_argument"},
-		{"Unauthenticated", "unauthenticated", "unauthenticated"},
-		{"PermissionDenied", "permission", "permission_denied"},
+		{"NotFound", "not_found", "not_found", http.StatusNotFound},
+		{"InvalidArgument", "invalid", "invalid_argument", http.StatusBadRequest},
+		{"Unauthenticated", "unauthenticated", "unauthenticated", http.StatusUnauthorized},
+		{"PermissionDenied", "permission", "permission_denied", http.StatusForbidden},
 	}
 
 	for _, tt := range tests {
@@ -588,9 +589,9 @@ func TestErrorCodes(t *testing.T) {
 			}
 			defer func() { _ = resp.Body.Close() }()
 
-			// Connect protocol returns 200 with error in body
-			if resp.StatusCode != http.StatusOK {
-				t.Errorf("Expected status 200, got %d", resp.StatusCode)
+			// Connect protocol spec: errors return appropriate HTTP status codes
+			if resp.StatusCode != tt.expectedStatus {
+				t.Errorf("Expected status %d, got %d", tt.expectedStatus, resp.StatusCode)
 			}
 
 			var result map[string]any

@@ -346,23 +346,6 @@ func JSONToStruct(data []byte, v any) error {
 	return json.Unmarshal(data, v)
 }
 
-// ConvertViaJSON converts between proto and struct using JSON as intermediate format.
-// Deprecated: Use ProtoToStruct or StructToProto for better performance.
-func ConvertViaJSON(src, dst any) error {
-	// Marshal source to JSON
-	jsonData, err := json.Marshal(src)
-	if err != nil {
-		return fmt.Errorf("failed to marshal to JSON: %w", err)
-	}
-
-	// Unmarshal JSON to destination
-	if err := json.Unmarshal(jsonData, dst); err != nil {
-		return fmt.Errorf("failed to unmarshal from JSON: %w", err)
-	}
-
-	return nil
-}
-
 // CreateDynamicMessage creates a new dynamic protobuf message from a descriptor.
 func CreateDynamicMessage(md protoreflect.MessageDescriptor) *dynamicpb.Message {
 	return dynamicpb.NewMessage(md)

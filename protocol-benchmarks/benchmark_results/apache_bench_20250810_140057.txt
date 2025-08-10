@@ -1,0 +1,121 @@
+=== Apache Bench Results ===
+Timestamp: Sun Aug 10 14:01:03 JST 2025
+
+--- Connect-go Server (Port 8084) ---
+This is ApacheBench, Version 2.3 <$Revision: 1913912 $>
+Copyright 1996 Adam Twiss, Zeus Technology Ltd, http://www.zeustech.net/
+Licensed to The Apache Software Foundation, http://www.apache.org/
+
+Benchmarking 127.0.0.1 (be patient)
+Completed 100 requests
+Completed 200 requests
+Completed 300 requests
+Completed 400 requests
+Completed 500 requests
+Completed 600 requests
+Completed 700 requests
+Completed 800 requests
+Completed 900 requests
+Completed 1000 requests
+Finished 1000 requests
+
+
+Server Software:        
+Server Hostname:        127.0.0.1
+Server Port:            8084
+
+Document Path:          /grpcweb.example.v1.GreeterService/Greet
+Document Length:        101 bytes
+
+Concurrency Level:      10
+Time taken for tests:   0.017 seconds
+Complete requests:      1000
+Failed requests:        2
+   (Connect: 0, Receive: 0, Length: 2, Exceptions: 0)
+Keep-Alive requests:    1000
+Total transferred:      256992 bytes
+Total body sent:        224000
+HTML transferred:       100994 bytes
+Requests per second:    58733.70 [#/sec] (mean)
+Time per request:       0.170 [ms] (mean)
+Time per request:       0.017 [ms] (mean, across all concurrent requests)
+Transfer rate:          14740.32 [Kbytes/sec] received
+                        12848.00 kb/s sent
+                        27588.32 kb/s total
+
+Connection Times (ms)
+              min  mean[+/-sd] median   max
+Connect:        0    0   0.0      0       0
+Processing:     0    0   0.1      0       1
+Waiting:        0    0   0.0      0       1
+Total:          0    0   0.1      0       1
+
+Percentage of the requests served within a certain time (ms)
+  50%      0
+  66%      0
+  75%      0
+  80%      0
+  90%      0
+  95%      0
+  98%      0
+  99%      0
+ 100%      1 (longest request)
+
+--- Hyperway Server (Port 8080) ---
+This is ApacheBench, Version 2.3 <$Revision: 1913912 $>
+Copyright 1996 Adam Twiss, Zeus Technology Ltd, http://www.zeustech.net/
+Licensed to The Apache Software Foundation, http://www.apache.org/
+
+Benchmarking 127.0.0.1 (be patient)
+Completed 100 requests
+Completed 200 requests
+Completed 300 requests
+Completed 400 requests
+Completed 500 requests
+Completed 600 requests
+Completed 700 requests
+Completed 800 requests
+Completed 900 requests
+Completed 1000 requests
+Finished 1000 requests
+
+
+Server Software:        
+Server Hostname:        127.0.0.1
+Server Port:            8080
+
+Document Path:          /grpcweb.example.v1.GreeterService/Greet
+Document Length:        89 bytes
+
+Concurrency Level:      10
+Time taken for tests:   0.017 seconds
+Complete requests:      1000
+Failed requests:        0
+Keep-Alive requests:    1000
+Total transferred:      419000 bytes
+Total body sent:        224000
+HTML transferred:       89000 bytes
+Requests per second:    60255.48 [#/sec] (mean)
+Time per request:       0.166 [ms] (mean)
+Time per request:       0.017 [ms] (mean, across all concurrent requests)
+Transfer rate:          24655.32 [Kbytes/sec] received
+                        13180.89 kb/s sent
+                        37836.21 kb/s total
+
+Connection Times (ms)
+              min  mean[+/-sd] median   max
+Connect:        0    0   0.0      0       0
+Processing:     0    0   0.1      0       1
+Waiting:        0    0   0.1      0       1
+Total:          0    0   0.1      0       1
+
+Percentage of the requests served within a certain time (ms)
+  50%      0
+  66%      0
+  75%      0
+  80%      0
+  90%      0
+  95%      0
+  98%      0
+  99%      1
+ 100%      1 (longest request)

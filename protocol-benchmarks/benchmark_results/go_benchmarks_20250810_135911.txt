@@ -1,0 +1,23 @@
+goos: darwin
+goarch: arm64
+pkg: grpc-real-comparison
+cpu: Apple M4 Max
+BenchmarkConnectGoGRPC-14                 	  153237	     39200 ns/op	   14975 B/op	      96 allocs/op
+BenchmarkHyperwayGRPC-14                  	  153298	     38277 ns/op	    9593 B/op	     102 allocs/op
+BenchmarkConnectGoConnect-14              	  260418	     20669 ns/op	   14453 B/op	      87 allocs/op
+BenchmarkHyperwayConnect-14               	  309327	     18929 ns/op	    7053 B/op	      89 allocs/op
+--- FAIL: BenchmarkConnectGoConnectJSON
+    client_test.go:175: invalid_argument: unmarshal message: json: cannot unmarshal string into Go struct field GreetResponse.timestamp of type timestamppb.Timestamp
+BenchmarkHyperwayConnectJSON-14           	  320589	     18570 ns/op	    7198 B/op	      97 allocs/op
+BenchmarkConnectGoStreaming-14            	   12824	    481941 ns/op	  491537 B/op	     708 allocs/op
+BenchmarkHyperwayStreaming-14             	  106102	     54015 ns/op	   25527 B/op	     512 allocs/op
+BenchmarkConnectGoConnectProtoHTTP2-14    	  187656	     31636 ns/op	   12176 B/op	      70 allocs/op
+BenchmarkHyperwayConnectProtoHTTP2-14     	  196107	     29738 ns/op	    7662 B/op	      69 allocs/op
+--- FAIL: BenchmarkConnectGoConnectJSONHTTP2
+    client_test.go:380: invalid_argument: unmarshal message: json: cannot unmarshal string into Go struct field GreetResponse.timestamp of type timestamppb.Timestamp
+BenchmarkHyperwayConnectJSONHTTP2-14      	  199284	     29069 ns/op	    8455 B/op	      77 allocs/op
+BenchmarkConnectGoGRPCStreaming-14        	    7958	    707787 ns/op	  479876 B/op	     799 allocs/op
+BenchmarkHyperwayGRPCStreaming-14         	   76069	     78512 ns/op	   29235 B/op	     508 allocs/op
+FAIL
+exit status 1
+FAIL	grpc-real-comparison	78.952s

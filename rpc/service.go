@@ -62,6 +62,10 @@ type ServiceOptions struct {
 	JSONRPCPath string
 	// JSONRPCBatchLimit is the maximum number of requests in a batch (default: 100)
 	JSONRPCBatchLimit int
+	// MaxReceiveMessageSize is the maximum size of a message that can be received (default: 4MB)
+	MaxReceiveMessageSize int
+	// MaxSendMessageSize is the maximum size of a message that can be sent (default: 4MB)
+	MaxSendMessageSize int
 }
 
 // Method represents an RPC method.
@@ -95,6 +99,14 @@ var (
 	globalBuilderCache = sync.Map{} // map[packageName]*schema.Builder
 )
 
+// Default message size limits (matching gRPC defaults)
+const (
+	// DefaultMaxReceiveMessageSize is the default maximum message size that can be received (4MB)
+	DefaultMaxReceiveMessageSize = 4 * 1024 * 1024
+	// DefaultMaxSendMessageSize is the default maximum message size that can be sent (4MB)
+	DefaultMaxSendMessageSize = 4 * 1024 * 1024
+)
+
 // NewService creates a new RPC service.
 func NewService(name string, opts ...ServiceOption) *Service {
 	svc := &Service{
@@ -123,6 +135,14 @@ func NewService(name string, opts ...ServiceOption) *Service {
 	}
 	if svc.options.JSONRPCBatchLimit == 0 {
 		svc.options.JSONRPCBatchLimit = 100
+	}
+
+	// Set message size defaults
+	if svc.options.MaxReceiveMessageSize == 0 {
+		svc.options.MaxReceiveMessageSize = DefaultMaxReceiveMessageSize
+	}
+	if svc.options.MaxSendMessageSize == 0 {
+		svc.options.MaxSendMessageSize = DefaultMaxSendMessageSize
 	}
 
 	// Parse service config if provided
@@ -923,6 +943,22 @@ func WithJSONRPC(path string) ServiceOption {
 func WithJSONRPCBatchLimit(limit int) ServiceOption {
 	return func(o *ServiceOptions) {
 		o.JSONRPCBatchLimit = limit
+	}
+}
+
+// WithMaxReceiveMessageSize sets the maximum size of a message that can be received.
+// Default is 4MB to match gRPC defaults.
+func WithMaxReceiveMessageSize(size int) ServiceOption {
+	return func(o *ServiceOptions) {
+		o.MaxReceiveMessageSize = size
+	}
+}
+
+// WithMaxSendMessageSize sets the maximum size of a message that can be sent.
+// Default is 4MB to match gRPC defaults.
+func WithMaxSendMessageSize(size int) ServiceOption {
+	return func(o *ServiceOptions) {
+		o.MaxSendMessageSize = size
 	}
 }
 
