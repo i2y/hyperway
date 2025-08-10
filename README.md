@@ -128,7 +128,6 @@ func main() {
     svc := rpc.NewService("UserService", 
         rpc.WithPackage("user.v1"),
         rpc.WithValidation(true),
-        // New in v0.5.0:
         rpc.WithMaxReceiveMessageSize(10 * 1024 * 1024), // 10MB max receive
         rpc.WithMaxSendMessageSize(10 * 1024 * 1024),    // 10MB max send
     )
