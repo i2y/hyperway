@@ -1,0 +1,30 @@
+# Latest Benchmark Results
+# Date: 2025-08-10
+# Platform: Darwin arm64 (Apple M4 Max)
+
+## Go Benchmarks (5s duration)
+
+BenchmarkConnectGoGRPC-14                   153237      39200 ns/op     14975 B/op        96 allocs/op
+BenchmarkHyperwayGRPC-14                    153298      38277 ns/op      9593 B/op       102 allocs/op
+BenchmarkConnectGoConnect-14                260418      20669 ns/op     14453 B/op        87 allocs/op
+BenchmarkHyperwayConnect-14                 309327      18929 ns/op      7053 B/op        89 allocs/op
+BenchmarkHyperwayConnectJSON-14             320589      18570 ns/op      7198 B/op        97 allocs/op
+BenchmarkConnectGoStreaming-14               12824     481941 ns/op    491537 B/op       708 allocs/op
+BenchmarkHyperwayStreaming-14               106102      54015 ns/op     25527 B/op       512 allocs/op
+BenchmarkConnectGoConnectProtoHTTP2-14      187656      31636 ns/op     12176 B/op        70 allocs/op
+BenchmarkHyperwayConnectProtoHTTP2-14       196107      29738 ns/op      7662 B/op        69 allocs/op
+BenchmarkHyperwayConnectJSONHTTP2-14        199284      29069 ns/op      8455 B/op        77 allocs/op
+BenchmarkConnectGoGRPCStreaming-14            7958     707787 ns/op    479876 B/op       799 allocs/op
+BenchmarkHyperwayGRPCStreaming-14            76069      78512 ns/op     29235 B/op       508 allocs/op
+
+## Apache Bench Results (1000 requests, 10 concurrent)
+
+Connect-go Server:
+  Requests per second:    58733.70 [#/sec]
+  Time per request:       0.170 [ms] (mean)
+  Transfer rate:          14740.32 [Kbytes/sec] received
+
+Hyperway Server:
+  Requests per second:    60255.48 [#/sec]
+  Time per request:       0.166 [ms] (mean)
+  Transfer rate:          24655.32 [Kbytes/sec] received

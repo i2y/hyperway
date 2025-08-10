@@ -179,12 +179,15 @@ func createMultiProtocolHandler(handlers map[string]http.Handler) http.Handler {
 		}
 
 		// Handle gRPC-Web requests
-		if isGRPCWeb(r) {
-			handleGRPCWebRequest(w, r, handler)
-			return
-		}
+		// NOTE: gRPC-Web handling is implemented directly in the rpc package
+		// to avoid duplicate protocol processing. The gateway-level gRPC-Web
+		// handler was causing conflicts as it was transforming requests that
+		// the rpc package already knows how to handle natively.
+		//
+		// Architecture decision: All protocol processing (gRPC, gRPC-Web, Connect)
+		// is unified in the rpc package for consistency and maintainability.
 
-		// Serve the request directly
+		// Serve the request directly (including gRPC-Web)
 		handler.ServeHTTP(w, r)
 	})
 }
@@ -224,14 +227,6 @@ func findHandler(handlers map[string]http.Handler, path string) http.Handler {
 	}
 
 	return nil
-}
-
-// handleGRPCWebRequest handles gRPC-Web requests
-func handleGRPCWebRequest(w http.ResponseWriter, r *http.Request, handler http.Handler) {
-	tempMux := http.NewServeMux()
-	tempMux.Handle(r.URL.Path, handler)
-	webHandler := newGRPCWebHandler(tempMux, defaultTimeout)
-	webHandler.ServeHTTP(w, r)
 }
 
 // ServeHTTP implements http.Handler.

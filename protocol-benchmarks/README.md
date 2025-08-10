@@ -9,7 +9,7 @@ Benchmark measurements show:
 - Lower memory usage in tested scenarios
 - Note: Hyperway is still in development and may not implement all Connect-go features
 
-For detailed analysis, see [BENCHMARK_ANALYSIS.md](./BENCHMARK_ANALYSIS.md).
+For latest results, see [latest_benchmark_results.txt](./latest_benchmark_results.txt).
 
 ## Setup
 
@@ -35,7 +35,24 @@ go run connect_server.go
 
 ## Running Benchmarks
 
-### Go Benchmarks (gRPC and Connect+Protobuf)
+### Automated Benchmark Suite
+```bash
+# Run all benchmarks (Go tests + Apache Bench)
+./run_benchmarks.sh
+
+# Run only Go benchmarks
+./run_benchmarks.sh --go-only
+
+# Run only Apache Bench tests
+./run_benchmarks.sh --apache-only
+
+# Custom parameters
+./run_benchmarks.sh --time 30s --requests 50000 --concurrency 200
+```
+
+### Manual Benchmarks
+
+#### Go Benchmarks (gRPC and Connect+Protobuf)
 ```bash
 # All protocols
 go test -bench=. -benchtime=30s
@@ -47,7 +64,7 @@ go test -bench='GRPC' -benchtime=30s
 go test -bench='Connect' -benchtime=30s
 ```
 
-### Apache Bench (Connect+JSON)
+#### Apache Bench (Connect+JSON)
 ```bash
 # Run the automated script
 ./run_apache_bench.sh

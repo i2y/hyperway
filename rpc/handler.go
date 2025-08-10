@@ -708,7 +708,6 @@ func (s *Service) readRequestBody(r *http.Request) ([]byte, error) {
 	return body, nil
 }
 
-
 // decompressBodyWithType decompresses a body using the specified encoding
 func (s *Service) decompressBodyWithType(body []byte, encoding string) ([]byte, error) {
 	compressor, ok := GetCompressor(encoding)
@@ -1190,7 +1189,6 @@ func (s *Service) encodeJSONResponse(w http.ResponseWriter, output any, compress
 	return nil
 }
 
-
 // maybeCompressWithType compresses data using the specified compressor
 func (s *Service) maybeCompressWithType(data []byte, w http.ResponseWriter, compressor Compressor, compressionType string) []byte {
 	if compressor == nil || compressionType == "" || !shouldCompress(data) {
@@ -1206,39 +1204,50 @@ func (s *Service) maybeCompressWithType(data []byte, w http.ResponseWriter, comp
 	return compressedData
 }
 
-// handleGRPCRequest handles a gRPC protocol request.
-func (s *Service) handleGRPCRequest(w http.ResponseWriter, r *http.Request, ctx *handlerContext) {
-	// gRPC uses a 5-byte message framing
+// readGRPCMessage reads and processes a gRPC framed message
+func (s *Service) readGRPCMessage(r *http.Request) (message []byte, compressed bool, err error) {
 	// Get frame header from pool
 	frameHeaderPtr := frameHeaderPool.Get().(*[]byte)
 	frameHeader := *frameHeaderPtr
 	defer frameHeaderPool.Put(frameHeaderPtr)
 
 	if _, err := io.ReadFull(r.Body, frameHeader); err != nil {
-		s.writeGRPCError(w, NewError(CodeInternal, "failed to read frame header"))
-		return
+		return nil, false, NewError(CodeInternal, "failed to read frame header")
 	}
 
 	// Parse frame header
-	compressed := frameHeader[0] == frameFlagCompressed
-	// Extract 32-bit message length from bytes 1-4 (big-endian)
+	compressed = frameHeader[0] == frameFlagCompressed
+	messageLength := parseMessageLength(frameHeader)
+
+	// Check if message size exceeds receive limit
+	if messageLength > s.options.MaxReceiveMessageSize {
+		return nil, compressed, NewError(CodeResourceExhausted,
+			fmt.Sprintf("gRPC message size %d exceeds maximum receive size %d",
+				messageLength, s.options.MaxReceiveMessageSize))
+	}
+
+	// Read message body
+	message = s.getMessageBuffer(messageLength)
+	if _, err := io.ReadFull(r.Body, message); err != nil {
+		return nil, compressed, NewError(CodeInternal, "failed to read message")
+	}
+
+	return message, compressed, nil
+}
+
+// parseMessageLength extracts the message length from gRPC frame header
+func parseMessageLength(frameHeader []byte) int {
 	const (
 		shift24 = 24
 		shift16 = 16
 		shift8  = 8
 	)
-	messageLength := int(frameHeader[1])<<shift24 | int(frameHeader[2])<<shift16 | int(frameHeader[3])<<shift8 | int(frameHeader[4])
+	return int(frameHeader[1])<<shift24 | int(frameHeader[2])<<shift16 |
+		int(frameHeader[3])<<shift8 | int(frameHeader[4])
+}
 
-	// Check if message size exceeds receive limit
-	if messageLength > s.options.MaxReceiveMessageSize {
-		s.writeGRPCError(w, NewError(CodeResourceExhausted,
-			fmt.Sprintf("gRPC message size %d exceeds maximum receive size %d",
-				messageLength, s.options.MaxReceiveMessageSize)))
-		return
-	}
-
-	// Get appropriately sized buffer from pool
-	var message []byte
+// getMessageBuffer gets an appropriately sized buffer for the message
+func (s *Service) getMessageBuffer(messageLength int) []byte {
 	if messageLength <= maxBufferSize {
 		msgPtr := byteSlicePool.Get().(*[]byte)
 		if cap(*msgPtr) < messageLength {
@@ -1246,47 +1255,68 @@ func (s *Service) handleGRPCRequest(w http.ResponseWriter, r *http.Request, ctx 
 		} else {
 			*msgPtr = (*msgPtr)[:messageLength]
 		}
-		message = *msgPtr
-		defer func() {
-			*msgPtr = message[:0] // Reset slice
-			byteSlicePool.Put(msgPtr)
-		}()
-	} else {
-		// For very large messages, allocate directly
-		message = make([]byte, messageLength)
+		return *msgPtr
+	}
+	// For very large messages, allocate directly
+	return make([]byte, messageLength)
+}
+
+// decompressGRPCMessage decompresses a gRPC message if needed
+func (s *Service) decompressGRPCMessage(message []byte, compressed bool) ([]byte, error) {
+	if !compressed {
+		return message, nil
 	}
 
-	if _, err := io.ReadFull(r.Body, message); err != nil {
-		s.writeGRPCError(w, NewError(CodeInternal, "failed to read message"))
+	// gRPC uses gzip by default
+	compressor, ok := GetCompressor(CompressionGzip)
+	if !ok {
+		return nil, NewError(CodeUnimplemented, "gzip compression not available")
+	}
+
+	decompressed, err := compressor.Decompress(message)
+	if err != nil {
+		return nil, NewErrorf(CodeInternal, "decompression failed: %v", err)
+	}
+
+	// Check decompressed size
+	if len(decompressed) > s.options.MaxReceiveMessageSize {
+		return nil, NewError(CodeResourceExhausted,
+			fmt.Sprintf("decompressed gRPC message size %d exceeds maximum receive size %d",
+				len(decompressed), s.options.MaxReceiveMessageSize))
+	}
+
+	return decompressed, nil
+}
+
+// handleGRPCRequest handles a gRPC protocol request.
+func (s *Service) handleGRPCRequest(w http.ResponseWriter, r *http.Request, ctx *handlerContext) {
+	// Read gRPC framed message (all gRPC and gRPC-Web use framing)
+	message, compressed, err := s.readGRPCMessage(r)
+	if err != nil {
+		s.writeGRPCError(w, err)
 		return
 	}
 
-	// Decompress if needed
-	if compressed {
-		// gRPC uses gzip by default
-		compressor, ok := GetCompressor(CompressionGzip)
-		if !ok {
-			s.writeGRPCError(w, NewError(CodeUnimplemented, "gzip compression not available"))
-			return
-		}
+	// Clean up buffer if it was pooled
+	if len(message) <= maxBufferSize {
+		defer func() {
+			msgPtr := &message
+			*msgPtr = (*msgPtr)[:0] // Reset slice
+			byteSlicePool.Put(msgPtr)
+		}()
+	}
 
-		decompressed, err := compressor.Decompress(message)
-		if err != nil {
-			s.writeGRPCError(w, NewErrorf(CodeInternal, "decompression failed: %v", err))
-			return
-		}
-		// Check decompressed size
-		if len(decompressed) > s.options.MaxReceiveMessageSize {
-			s.writeGRPCError(w, NewError(CodeResourceExhausted,
-				fmt.Sprintf("decompressed gRPC message size %d exceeds maximum receive size %d",
-					len(decompressed), s.options.MaxReceiveMessageSize)))
-			return
-		}
-		message = decompressed
+	// Decompress if needed
+	message, err = s.decompressGRPCMessage(message, compressed)
+	if err != nil {
+		s.writeGRPCError(w, err)
+		return
 	}
 
 	// Decode input
 	p := detectProtocol(r)
+
+	// Decode input
 	inputVal, err := s.decodeGRPCInput(message, ctx, p.wantsJSON)
 	if err != nil {
 		s.writeGRPCError(w, err)
@@ -1334,16 +1364,26 @@ func (s *Service) decodeGRPCInput(data []byte, ctx *handlerContext, isJSON bool)
 			return reflect.Value{}, NewErrorf(CodeInvalidArgument, "failed to unmarshal JSON: %v", err)
 		}
 	} else {
-		// Decode protobuf
-		msg, err := ctx.inputCodec.Unmarshal(data)
-		if err != nil {
-			return reflect.Value{}, NewErrorf(CodeInvalidArgument, "failed to unmarshal protobuf: %v", err)
-		}
-		defer ctx.inputCodec.ReleaseMessage(msg)
+		// Check if this is a proto.Message
+		if protoMsg, ok := inputVal.Interface().(proto.Message); ok {
+			// Direct protobuf unmarshal for proto.Message types
+			if err := proto.Unmarshal(data, protoMsg); err != nil {
+				return reflect.Value{}, NewErrorf(CodeInvalidArgument, "failed to unmarshal protobuf message: %v", err)
+			}
+		} else if ctx.inputCodec != nil {
+			// Use codec for non-proto types
+			msg, err := ctx.inputCodec.Unmarshal(data)
+			if err != nil {
+				return reflect.Value{}, NewErrorf(CodeInvalidArgument, "failed to unmarshal protobuf: %v", err)
+			}
+			defer ctx.inputCodec.ReleaseMessage(msg)
 
-		// Convert to struct
-		if err := reflectutil.ProtoToStruct(msg.ProtoReflect(), inputVal.Interface()); err != nil {
-			return reflect.Value{}, NewErrorf(CodeInvalidArgument, "failed to convert proto to struct: %v", err)
+			// Convert to struct
+			if err := reflectutil.ProtoToStruct(msg.ProtoReflect(), inputVal.Interface()); err != nil {
+				return reflect.Value{}, NewErrorf(CodeInvalidArgument, "failed to convert proto to struct: %v", err)
+			}
+		} else {
+			return reflect.Value{}, NewErrorf(CodeInternal, "no codec available for protobuf decoding")
 		}
 	}
 
@@ -1351,6 +1391,72 @@ func (s *Service) decodeGRPCInput(data []byte, ctx *handlerContext, isJSON bool)
 }
 
 // encodeGRPCResponse encodes and sends a gRPC response.
+// encodeResponseData encodes the output based on protocol preferences
+func (s *Service) encodeResponseData(output any, p protocolInfo, ctx *handlerContext) ([]byte, error) {
+	if p.wantsJSON {
+		// Encode as JSON for gRPC+JSON
+		data, err := json.Marshal(output)
+		if err != nil {
+			return nil, fmt.Errorf("failed to marshal struct to JSON: %w", err)
+		}
+		return data, nil
+	}
+
+	// Encode as protobuf
+	// Check if output is a proto.Message
+	if protoMsg, ok := output.(proto.Message); ok {
+		// Direct protobuf marshal for proto.Message types
+		data, err := proto.Marshal(protoMsg)
+		if err != nil {
+			return nil, fmt.Errorf("failed to marshal protobuf message: %w", err)
+		}
+		return data, nil
+	}
+
+	if ctx.outputCodec != nil {
+		// Use codec for non-proto types
+		data, err := ctx.outputCodec.MarshalStruct(output)
+		if err != nil {
+			return nil, fmt.Errorf("failed to marshal struct to protobuf: %w", err)
+		}
+		return data, nil
+	}
+
+	return nil, fmt.Errorf("no codec available for protobuf encoding")
+}
+
+// applyCompression attempts to compress data if conditions are met
+func (s *Service) applyCompression(data []byte, r *http.Request, w http.ResponseWriter, p protocolInfo) ([]byte, bool) {
+	// Don't compress for gRPC-Web+JSON
+	if p.isGRPCWeb && p.wantsJSON {
+		return data, false
+	}
+
+	// Check what encoding the client accepts
+	acceptEncoding := r.Header.Get("grpc-accept-encoding")
+	if acceptEncoding == "" {
+		acceptEncoding = r.Header.Get("grpc-encoding")
+	}
+
+	// Select best compressor based on client preferences
+	if !shouldCompress(data) {
+		return data, false
+	}
+
+	compressor, encoding := selectCompressor(acceptEncoding)
+	if compressor == nil {
+		return data, false
+	}
+
+	compressedData, err := compressor.Compress(data)
+	if err != nil || len(compressedData) >= len(data) {
+		return data, false
+	}
+
+	w.Header().Set("grpc-encoding", encoding)
+	return compressedData, true
+}
+
 func (s *Service) encodeGRPCResponse(w http.ResponseWriter, r *http.Request, output any, ctx *handlerContext) error {
 	// Determine content type based on request
 	p := detectProtocol(r)
@@ -1371,21 +1477,10 @@ func (s *Service) encodeGRPCResponse(w http.ResponseWriter, r *http.Request, out
 	w.Header().Set("Trailer", "grpc-status, grpc-message")
 	w.WriteHeader(http.StatusOK)
 
-	// Encode struct based on content type
-	var data []byte
-	var err error
-	if p.wantsJSON {
-		// Encode as JSON for gRPC+JSON
-		data, err = json.Marshal(output)
-		if err != nil {
-			return fmt.Errorf("failed to marshal struct to JSON: %w", err)
-		}
-	} else {
-		// Encode as protobuf
-		data, err = ctx.outputCodec.MarshalStruct(output)
-		if err != nil {
-			return fmt.Errorf("failed to marshal struct to protobuf: %w", err)
-		}
+	// Encode the response data
+	data, err := s.encodeResponseData(output, p, ctx)
+	if err != nil {
+		return err
 	}
 
 	// Check if encoded message exceeds send size limit
@@ -1399,25 +1494,8 @@ func (s *Service) encodeGRPCResponse(w http.ResponseWriter, r *http.Request, out
 				len(data), s.options.MaxSendMessageSize))
 	}
 
-	// Check if compression should be used
-	compressed := false
-	// Check what encoding the client accepts
-	acceptEncoding := r.Header.Get("grpc-accept-encoding")
-	if acceptEncoding == "" {
-		acceptEncoding = r.Header.Get("grpc-encoding")
-	}
-
-	// Select best compressor based on client preferences
-	if shouldCompress(data) {
-		if compressor, encoding := selectCompressor(acceptEncoding); compressor != nil {
-			compressedData, err := compressor.Compress(data)
-			if err == nil && len(compressedData) < len(data) {
-				data = compressedData
-				compressed = true
-				w.Header().Set("grpc-encoding", encoding)
-			}
-		}
-	}
+	// Apply compression if appropriate
+	data, compressed := s.applyCompression(data, r, w, p)
 
 	// Write gRPC frame using pooled buffer
 	framePtr := frameHeaderPool.Get().(*[]byte)
@@ -1442,12 +1520,32 @@ func (s *Service) encodeGRPCResponse(w http.ResponseWriter, r *http.Request, out
 	_, _ = w.Write(frame)
 	_, _ = w.Write(data)
 
-	// Send trailers after writing the body
-	// In HTTP/2, trailers are sent as a separate HEADERS frame with END_STREAM flag
-	// The Go HTTP/2 server automatically sends trailers when we set them after writing the body
-	trailer := w.Header()
-	trailer.Set("grpc-status", "0")
-	trailer.Set("grpc-message", "")
+	// Send trailers
+	if p.isGRPCWeb {
+		// gRPC-Web sends trailers as a separate frame with flag 0x80
+		trailerData := []byte("grpc-status: 0\r\ngrpc-message: \r\n")
+
+		// Write trailer frame header
+		trailerFrame := make([]byte, 5)
+		trailerFrame[0] = 0x80 // Trailer flag
+		const (
+			shift24 = 24
+			shift16 = 16
+			shift8  = 8
+		)
+		trailerFrame[1] = byte(len(trailerData) >> shift24)
+		trailerFrame[2] = byte(len(trailerData) >> shift16)
+		trailerFrame[3] = byte(len(trailerData) >> shift8)
+		trailerFrame[4] = byte(len(trailerData))
+
+		_, _ = w.Write(trailerFrame)
+		_, _ = w.Write(trailerData)
+	} else {
+		// Regular gRPC uses HTTP/2 trailers
+		trailer := w.Header()
+		trailer.Set("grpc-status", "0")
+		trailer.Set("grpc-message", "")
+	}
 
 	// Flush to ensure trailers are sent
 	// This is critical for HTTP/2 trailers to be properly sent
