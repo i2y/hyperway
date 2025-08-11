@@ -209,7 +209,6 @@ func (s *UserService) UserChat(ctx context.Context, stream rpc.BidiStream[ChatRe
 			return err
 		}
 
-
 		// Echo back with server response
 		resp := &ChatResponse{
 			ServerMessage: fmt.Sprintf("Server received from %s: %s", req.UserID, req.Message),
@@ -235,7 +234,7 @@ func main() {
 	rpc.MustRegister(svc, "CreateUser", userService.CreateUser)
 	rpc.MustRegister(svc, "GetUser", userService.GetUser)
 	rpc.MustRegister(svc, "ListUsers", userService.ListUsers)
-	
+
 	// Register streaming methods
 	rpc.MustRegisterServerStream(svc, "StreamUsers", userService.StreamUsers)
 	rpc.MustRegisterClientStream(svc, "BatchCreateUsers", userService.BatchCreateUsers)

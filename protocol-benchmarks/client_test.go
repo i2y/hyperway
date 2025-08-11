@@ -718,6 +718,8 @@ func BenchmarkConnectGoBidiStreaming(b *testing.B) {
 }
 
 // BenchmarkHyperwayConnectBidiStreaming benchmarks Hyperway bidirectional streaming with Connect protocol
+// SKIP: HTTP/1.1 doesn't support bidirectional streaming properly
+/*
 func BenchmarkHyperwayConnectBidiStreaming(b *testing.B) {
 	httpClient := &http.Client{
 		Transport: &http.Transport{
@@ -769,8 +771,11 @@ func BenchmarkHyperwayConnectBidiStreaming(b *testing.B) {
 		}
 	}
 }
+*/
 
 // BenchmarkConnectGoConnectBidiStreaming benchmarks Connect-go bidirectional streaming with Connect protocol
+// SKIP: HTTP/1.1 doesn't support bidirectional streaming properly
+/*
 func BenchmarkConnectGoConnectBidiStreaming(b *testing.B) {
 	httpClient := &http.Client{
 		Transport: &http.Transport{
@@ -824,6 +829,7 @@ func BenchmarkConnectGoConnectBidiStreaming(b *testing.B) {
 		}
 	})
 }
+*/
 
 // BenchmarkHyperwayConnectBidiStreamingHTTP2 benchmarks Hyperway bidirectional streaming with Connect protocol over HTTP/2
 func BenchmarkHyperwayConnectBidiStreamingHTTP2(b *testing.B) {
