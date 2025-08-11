@@ -38,7 +38,7 @@ Hyperway implements multiple RPC protocols with dynamic capabilities:
 - Supports gRPC (Protobuf), Connect RPC (both Protobuf and JSON), gRPC-Web, and JSON-RPC 2.0
 - Automatically generates OpenAPI 3.0 documentation at `/openapi.json`
 - Maintains wire compatibility with standard clients for all protocols
-- Supports unary and server-streaming RPCs
+- Supports all RPC types: unary, server-streaming, client-streaming, and bidirectional streaming
 - Handles both HTTP/1.1 and HTTP/2 (with h2c support)
 
 ## 📊 Performance
@@ -73,7 +73,7 @@ For detailed benchmarks and performance characteristics, see the [protocol-bench
 - 📚 **OpenAPI Generation**: Automatic API documentation
 - 🌐 **Browser Support**: Native gRPC-Web support without proxy
 - 🗜️ **Compression**: Multi-algorithm support (gzip, brotli, zstd) for all protocols
-- 🔁 **Server Streaming**: Support for server-streaming RPCs
+- 🔁 **All Streaming Types**: Support for server, client, and bidirectional streaming RPCs
 - ⏰ **Well-Known Types**: Support for common Google Well-Known Types (Timestamp, Duration, Empty, Any, Struct, Value, ListValue, FieldMask)
 - 🔌 **Custom Interceptors**: Middleware for logging, auth, metrics, etc.
 - 📦 **Proto3 Optional**: Full support for optional fields
@@ -470,7 +470,78 @@ rpc.Register(adminSvc, "DeleteUser", deleteUser)
 handler, _ := rpc.NewHandler(userSvc, authSvc, adminSvc)
 ```
 
-### Server Streaming
+### Streaming RPCs
+
+#### Server Streaming
+
+```go
+// Server sends multiple responses to client
+func (s *Service) WatchEvents(ctx context.Context, req *WatchRequest, stream rpc.ServerStream[*Event]) error {
+    for i := 0; i < 10; i++ {
+        event := &Event{
+            ID:      fmt.Sprintf("event-%d", i),
+            Message: fmt.Sprintf("Event %d", i),
+        }
+        if err := stream.Send(event); err != nil {
+            return err
+        }
+        time.Sleep(100 * time.Millisecond)
+    }
+    return nil
+}
+
+// Register: rpc.RegisterServerStream(svc, "WatchEvents", service.WatchEvents)
+```
+
+#### Client Streaming
+
+```go
+// Client sends multiple requests, server sends single response
+func (s *Service) UploadFiles(ctx context.Context, stream rpc.ClientStream[*FileChunk]) (*UploadResult, error) {
+    var totalSize int64
+    for {
+        chunk, err := stream.Recv()
+        if err == io.EOF {
+            break
+        }
+        if err != nil {
+            return nil, err
+        }
+        totalSize += int64(len(chunk.Data))
+    }
+    return &UploadResult{TotalSize: totalSize}, nil
+}
+
+// Register: rpc.RegisterClientStream(svc, "UploadFiles", service.UploadFiles)
+```
+
+#### Bidirectional Streaming
+
+```go
+// Both client and server send multiple messages
+func (s *Service) Chat(ctx context.Context, stream rpc.BidiStream[*ChatMessage, *ChatResponse]) error {
+    for {
+        msg, err := stream.Recv()
+        if err == io.EOF {
+            return nil
+        }
+        if err != nil {
+            return err
+        }
+        
+        response := &ChatResponse{
+            Message: fmt.Sprintf("Echo: %s", msg.Text),
+        }
+        if err := stream.Send(response); err != nil {
+            return err
+        }
+    }
+}
+
+// Register: rpc.RegisterBidiStream(svc, "Chat", service.Chat)
+```
+
+#### Complete Example with All Streaming Types
 
 ```go
 package main
@@ -478,6 +549,7 @@ package main
 import (
     "context"
     "fmt"
+    "io"
     "log"
     "net/http"
     "time"
@@ -487,56 +559,102 @@ import (
     "golang.org/x/net/http2/h2c"
 )
 
-// Define request/response types
-type WatchEventsRequest struct {
-    Filter string `json:"filter" validate:"required"`
-    Limit  int32  `json:"limit,omitempty"`
+// Request/Response types
+type WatchRequest struct {
+    Filter string `json:"filter"`
 }
 
 type Event struct {
-    ID        string    `json:"id"`
-    Type      string    `json:"type"`
-    Message   string    `json:"message"`
-    Timestamp time.Time `json:"timestamp"`
+    ID      string    `json:"id"`
+    Message string    `json:"message"`
+    Time    time.Time `json:"time"`
 }
 
-// Service with streaming method
-type EventService struct{}
+type FileChunk struct {
+    Name string `json:"name"`
+    Data []byte `json:"data"`
+}
 
-func (s *EventService) WatchEvents(ctx context.Context, req *WatchEventsRequest, stream rpc.ServerStream[*Event]) error {
-    // Send events to the client
-    for i := 0; i < 10; i++ {
+type UploadResult struct {
+    TotalSize int64 `json:"total_size"`
+}
+
+type ChatMessage struct {
+    Text string `json:"text"`
+}
+
+type ChatResponse struct {
+    Message string `json:"message"`
+}
+
+// Service implementation
+type StreamService struct{}
+
+// Server streaming
+func (s *StreamService) WatchEvents(ctx context.Context, req *WatchRequest, stream rpc.ServerStream[*Event]) error {
+    for i := 0; i < 5; i++ {
         event := &Event{
-            ID:        fmt.Sprintf("event-%d", i),
-            Type:      "update",
-            Message:   fmt.Sprintf("Event %d matching filter: %s", i, req.Filter),
-            Timestamp: time.Now(),
+            ID:      fmt.Sprintf("event-%d", i),
+            Message: fmt.Sprintf("Filtered by: %s", req.Filter),
+            Time:    time.Now(),
         }
-        
         if err := stream.Send(event); err != nil {
             return err
         }
-        
-        // Simulate real-time events
-        time.Sleep(500 * time.Millisecond)
+        time.Sleep(100 * time.Millisecond)
     }
-    
     return nil
 }
 
+// Client streaming
+func (s *StreamService) UploadFiles(ctx context.Context, stream rpc.ClientStream[*FileChunk]) (*UploadResult, error) {
+    var totalSize int64
+    for {
+        chunk, err := stream.Recv()
+        if err == io.EOF {
+            break
+        }
+        if err != nil {
+            return nil, err
+        }
+        totalSize += int64(len(chunk.Data))
+    }
+    return &UploadResult{TotalSize: totalSize}, nil
+}
+
+// Bidirectional streaming
+func (s *StreamService) Chat(ctx context.Context, stream rpc.BidiStream[*ChatMessage, *ChatResponse]) error {
+    for {
+        msg, err := stream.Recv()
+        if err == io.EOF {
+            return nil
+        }
+        if err != nil {
+            return err
+        }
+        
+        response := &ChatResponse{
+            Message: fmt.Sprintf("Server says: %s", msg.Text),
+        }
+        if err := stream.Send(response); err != nil {
+            return err
+        }
+    }
+}
+
 func main() {
-    eventService := &EventService{}
+    service := &StreamService{}
     
     // Create service
-    svc := rpc.NewService("EventService",
-        rpc.WithPackage("events.v1"),
+    svc := rpc.NewService("StreamService",
+        rpc.WithPackage("stream.v1"),
         rpc.WithReflection(true),
     )
     
-    // Register server-streaming method
-    if err := rpc.RegisterServerStream(svc, "WatchEvents", eventService.WatchEvents); err != nil {
-        log.Fatal(err)
-    }
+    // Register all streaming methods
+    rpc.MustRegisterServerStream(svc, "WatchEvents", service.WatchEvents)
+    rpc.MustRegisterClientStream(svc, "UploadFiles", service.UploadFiles)
+    rpc.MustRegisterBidiStream(svc, "Chat", service.Chat)
     
     // Create handler and serve
     handler, err := rpc.NewHandler(svc)
@@ -544,11 +662,11 @@ func main() {
         log.Fatal(err)
     }
     
-    // Wrap with h2c for HTTP/2 support (required for gRPC streaming)
+    // Wrap with h2c for HTTP/2 support (required for gRPC)
     h2s := &http2.Server{}
     h2Handler := h2c.NewHandler(handler, h2s)
     
-    log.Println("Event service with streaming running on :8080")
+    log.Println("Streaming service running on :8080")
     log.Fatal(http.ListenAndServe(":8080", h2Handler))
 }
 ```
@@ -578,7 +696,7 @@ svc := rpc.NewService("MyService",
 
 ### HTTP Middleware and Handler Composition
 
-Hyperway's gateway implements the standard `http.Handler` interface, making it fully compatible with Go's HTTP ecosystem. This means you can:
+Hyperway's handler implements the standard `http.Handler` interface, making it fully compatible with Go's HTTP ecosystem. This means you can:
 - Use any standard net/http middleware
 - Combine it with other HTTP handlers
 - Integrate with existing HTTP routers and frameworks
@@ -776,7 +894,7 @@ This flexibility allows you to:
 - **Use popular Go web frameworks and routers** (chi, gin, echo, gorilla/mux)
 - **Implement custom request/response processing** with full HTTP control
 
-The key insight is that Hyperway's gateway is just a standard `http.Handler`, so any context values set via `r.WithContext()` in your middleware will be available in your RPC handlers via the `ctx` parameter.
+The key insight is that Hyperway's handler is just a standard `http.Handler`, so any context values set via `r.WithContext()` in your middleware will be available in your RPC handlers via the `ctx` parameter.
 
 ## 🏗️ Architecture
 
@@ -838,20 +956,19 @@ hyperway proto export --endpoint localhost:8080 --output ./proto
 - Microservices requiring both type safety and rapid iteration
 - Projects that value schema-first principles without manual schema maintenance
 - Services that need multi-protocol support (gRPC + Connect RPC)
-- Applications using unary and server-streaming RPCs
+- Applications using all RPC types (unary, server/client/bidirectional streaming)
 - Systems requiring automatic validation and type safety
 - Organizations wanting to share schemas across polyglot teams
 
 ❌ **Current Limitations:**
-- **Client/Bidi streaming** - Only server-streaming is currently supported
 - **Go-only service definitions** - Use exported protos for other languages
 - **Limited buf curl compatibility** - Some Well-Known Types (Struct, FieldMask) have JSON parsing issues with buf curl
 - **Map of Well-Known Types** - `map[string]*structpb.Value` causes runtime panics (implementation limitation)
-- **gRPC streaming compatibility** - gRPC streaming works but may require special handling for protoc-generated clients due to dynamic schema nature
+- **gRPC streaming compatibility** - All streaming types (server/client/bidirectional) work with standard gRPC and Connect clients
 
 ## 🚀 Current Status
 
-Hyperway supports unary and server-streaming RPCs with:
+Hyperway supports all RPC types (unary, server-streaming, client-streaming, and bidirectional streaming) with:
 - ✅ Comprehensive test coverage
 - ✅ Performance optimizations
 - ✅ Memory-efficient implementation
@@ -865,7 +982,6 @@ Hyperway supports unary and server-streaming RPCs with:
 - ✅ **Schema Registries** - Compatible with BSR and corporate registries
 - ✅ **Wire Compatibility** - Works with any gRPC/Connect client
 
-For client-streaming and bidirectional streaming RPCs, use traditional gRPC with `.proto` files until full streaming support is added.
 
 ## 🤝 Contributing
 
@@ -899,6 +1015,8 @@ MIT License - see [LICENSE](LICENSE) file for details.
 
 ### Completed ✅
 - [x] Server-streaming RPC support
+- [x] Client-streaming RPC support
+- [x] Bidirectional streaming RPC support
 - [x] Streaming performance optimizations
 - [x] Protobuf Editions support (Edition 2023)
 - [x] Additional Well-Known Types (Struct, Value, ListValue, FieldMask)
@@ -910,8 +1028,6 @@ MIT License - see [LICENSE](LICENSE) file for details.
 - [x] Unified protocol configuration API (v0.6.0)
 
 ### In Progress 🚧
-- [ ] Client-streaming RPC support
-- [ ] Bidirectional streaming RPC support
 
 ### Planned 📋
 - [ ] Metrics and tracing integration (OpenTelemetry)
@@ -924,7 +1040,7 @@ MIT License - see [LICENSE](LICENSE) file for details.
 A: Hyperway generates standard Protobuf schemas. Export them as `.proto` files and use any existing tooling - buf, protoc, linters, breaking change detection, etc. Your exported schemas are fully compatible with the entire Protobuf ecosystem.
 
 ### Q: Is this suitable for production use?
-A: Hyperway supports unary and server-streaming RPCs in production environments. The library has been optimized for performance and memory efficiency. However, client-streaming and bidirectional streaming are still under development. We recommend evaluating Hyperway for your specific use case and conducting thorough testing before production deployment.
+A: Hyperway is currently under active development but may be suitable for production use depending on your requirements. It supports all RPC types (unary, server-streaming, client-streaming, and bidirectional streaming) with competitive performance. We recommend thoroughly testing it for your specific use case before production deployment. It's particularly well-suited for prototyping, internal tools, and services where rapid development is prioritized.
 
 ### Q: What about cross-language support?
 A: Export your schemas as `.proto` files and generate clients in any language. Hyperway maintains full wire compatibility with standard gRPC and Connect clients, so your services work seamlessly with clients written in any supported language.
