@@ -11,6 +11,8 @@ import (
 	"sync"
 
 	"google.golang.org/protobuf/proto"
+
+	reflectutil "github.com/i2y/hyperway/internal/reflect"
 )
 
 // clientStreamReader implements client-side streaming reader
@@ -76,13 +78,33 @@ func setupDecodingFunction(reader *clientStreamReader, r *http.Request, ctx *han
 
 	switch {
 	case p.isGRPC && !isJSON:
-		// gRPC protobuf decoding
+		// gRPC protobuf decoding - use same approach as unary
 		reader.decodeFunc = func(data []byte) (any, error) {
-			protoMsg, err := ctx.inputCodec.Unmarshal(data)
-			if err != nil {
-				return nil, err
+			if ctx.inputCodec != nil {
+				// Decode to hyperpb.Message first
+				hyperpbMsg, err := ctx.inputCodec.Unmarshal(data)
+				if err != nil {
+					return nil, err
+				}
+				defer ctx.inputCodec.ReleaseMessage(hyperpbMsg)
+
+				// Create a new instance of the struct
+				result := reflect.New(reader.inputType).Interface()
+
+				// Convert proto to struct using the same utility as unary
+				if err := reflectutil.ProtoToStruct(hyperpbMsg.ProtoReflect(), result); err != nil {
+					return nil, fmt.Errorf("failed to convert proto to struct: %v", err)
+				}
+
+				return result, nil
 			}
-			return protoMsg, nil
+
+			// Fallback to direct protobuf decoding
+			msg := reflect.New(reader.inputType).Interface()
+			if protoMsg, ok := msg.(proto.Message); ok {
+				return msg, proto.Unmarshal(data, protoMsg)
+			}
+			return nil, fmt.Errorf("expected proto.Message, got %T", msg)
 		}
 	case ctx.useProtoInput && !isJSON:
 		// Connect protobuf decoding
@@ -100,13 +122,33 @@ func setupDecodingFunction(reader *clientStreamReader, r *http.Request, ctx *han
 			return msg, json.Unmarshal(data, msg)
 		}
 	default:
-		// Default: use codec
+		// Default: use codec with proper conversion
 		reader.decodeFunc = func(data []byte) (any, error) {
-			protoMsg, err := ctx.inputCodec.Unmarshal(data)
-			if err != nil {
-				return nil, err
+			if ctx.inputCodec != nil {
+				// Decode to hyperpb.Message first
+				hyperpbMsg, err := ctx.inputCodec.Unmarshal(data)
+				if err != nil {
+					return nil, err
+				}
+				defer ctx.inputCodec.ReleaseMessage(hyperpbMsg)
+
+				// Create a new instance of the struct
+				result := reflect.New(reader.inputType).Interface()
+
+				// Convert proto to struct using the same utility as unary
+				if err := reflectutil.ProtoToStruct(hyperpbMsg.ProtoReflect(), result); err != nil {
+					return nil, fmt.Errorf("failed to convert proto to struct: %v", err)
+				}
+
+				return result, nil
 			}
-			return protoMsg, nil
+
+			// Fallback if no codec
+			msg := reflect.New(reader.inputType).Interface()
+			if protoMsg, ok := msg.(proto.Message); ok {
+				return msg, proto.Unmarshal(data, protoMsg)
+			}
+			return nil, fmt.Errorf("expected proto.Message, got %T", msg)
 		}
 	}
 }
@@ -133,6 +175,11 @@ func (c *clientStreamReader) Recv() (any, error) {
 	// Read next message based on protocol
 	var data []byte
 	var err error
+
+	// Debug logging
+	if c.ctx == nil {
+		return nil, fmt.Errorf("handler context is nil")
+	}
 
 	switch {
 	case c.protocol.isGRPC:

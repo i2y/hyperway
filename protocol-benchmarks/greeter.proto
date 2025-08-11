@@ -10,6 +10,8 @@ service GreeterService {
   rpc Greet(GreetRequest) returns (GreetResponse);
   rpc Calculate(CalculateRequest) returns (CalculateResponse);
   rpc StreamNumbers(StreamRequest) returns (stream NumberResponse);
+  rpc SumNumbers(stream SumRequest) returns (SumResponse);
+  rpc EchoStream(stream EchoRequest) returns (stream EchoResponse);
 }
 
 message GreetRequest {
@@ -39,4 +41,24 @@ message StreamRequest {
 message NumberResponse {
   int32 number = 1;
   google.protobuf.Timestamp timestamp = 2;
+}
+
+message SumRequest {
+  int32 number = 1;
+}
+
+message SumResponse {
+  int32 total = 1;
+  int32 count = 2;
+}
+
+message EchoRequest {
+  string message = 1;
+  int32 index = 2;
+}
+
+message EchoResponse {
+  string message = 1;
+  int32 index = 2;
+  google.protobuf.Timestamp timestamp = 3;
 }

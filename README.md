@@ -46,9 +46,11 @@ Hyperway implements multiple RPC protocols with dynamic capabilities:
 Hyperway is designed with performance in mind and offers competitive performance compared to connect-go:
 
 ### Benchmark Summary
-- **Unary RPCs**: Comparable or better performance across protocols
-- **Streaming RPCs**: Significantly improved performance and memory efficiency
-- **Memory Usage**: Reduced memory consumption, especially for streaming operations
+- **Unary RPCs**: Comparable performance across protocols
+- **Server Streaming**: Improved performance and memory efficiency
+- **Client Streaming**: Competitive performance
+- **Bidirectional Streaming**: Efficient implementation
+- **Memory Usage**: Reduced memory consumption for streaming operations
 
 ### Key Performance Features
 - Dynamic schema generation with caching

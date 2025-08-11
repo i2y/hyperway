@@ -332,6 +332,7 @@ func (s *Service) sendConnectClientStreamResponse(w http.ResponseWriter, r *http
 	w.WriteHeader(http.StatusOK)
 
 	// Connect uses framing for responses too
+	// First write the message frame
 	frame := make([]byte, frameHeaderLength+len(data))
 	if compressed {
 		frame[0] = 1 // compression flag
@@ -342,6 +343,15 @@ func (s *Service) sendConnectClientStreamResponse(w http.ResponseWriter, r *http
 	copy(frame[5:], data)
 
 	_, _ = w.Write(frame)
+
+	// Send end-of-stream frame for Connect protocol
+	// Connect expects an empty JSON object {} in the end frame
+	endPayload := []byte("{}")
+	endFrame := make([]byte, frameHeaderLength+len(endPayload))
+	endFrame[0] = 0x02 // end-of-stream flag
+	binary.BigEndian.PutUint32(endFrame[1:5], uint32(len(endPayload)))
+	copy(endFrame[5:], endPayload)
+	_, _ = w.Write(endFrame)
 }
 
 // sendGRPCClientStreamResponse sends a gRPC protocol response for client streaming
@@ -497,6 +507,16 @@ func (s *Service) handleBidiStreamRequest(w http.ResponseWriter, r *http.Request
 	// Add handler context to the request context
 	reqCtx = context.WithValue(reqCtx, handlerContextKey, ctx)
 
+	// Send initial headers for gRPC protocol
+	if p.isGRPC {
+		stream.writer.sendHeaders()
+		stream.writer.headersSent = true
+		// Flush immediately to establish the stream
+		if stream.writer.flusher != nil {
+			stream.writer.flusher.Flush()
+		}
+	}
+
 	// Call the bidirectional streaming handler
 	if err := s.callBidiStreamHandler(ctx, reqCtx, stream); err != nil {
 		stream.writer.sendError(err)
@@ -557,13 +577,20 @@ type serverStreamWriter struct {
 
 func newServerStreamWriter(w http.ResponseWriter, r *http.Request, ctx *handlerContext, p protocolInfo) *serverStreamWriter {
 	flusher, _ := w.(http.Flusher)
+
+	// For bidirectional streaming, flush immediately after each message
+	flushPeriod := defaultFlushInterval
+	if ctx != nil && ctx.method != nil && ctx.method.StreamType == StreamTypeBidiStream {
+		flushPeriod = 0 // Immediate flush for bidi streams
+	}
+
 	s := &serverStreamWriter{
 		w:           w,
 		r:           r,
 		ctx:         ctx,
 		protocol:    p,
 		flusher:     flusher,
-		flushPeriod: defaultFlushInterval, // Flush every 10ms or after each message in low-throughput scenarios
+		flushPeriod: flushPeriod,
 		lastFlush:   time.Now(),
 	}
 
@@ -769,7 +796,8 @@ func (s *serverStreamWriter) sendConnectMessage(data []byte, compressed bool) er
 
 	// Smart flushing: flush if enough time has passed since last flush
 	// This balances latency and throughput
-	if s.flusher != nil && time.Since(s.lastFlush) >= s.flushPeriod {
+	// For bidi streams (flushPeriod=0), flush immediately
+	if s.flusher != nil && (s.flushPeriod == 0 || time.Since(s.lastFlush) >= s.flushPeriod) {
 		s.flusher.Flush()
 		s.lastFlush = time.Now()
 	}
@@ -805,7 +833,8 @@ func (s *serverStreamWriter) sendGRPCMessage(data []byte, compressed bool) error
 
 	// Smart flushing: flush if enough time has passed since last flush
 	// This balances latency and throughput
-	if s.flusher != nil && time.Since(s.lastFlush) >= s.flushPeriod {
+	// For bidi streams (flushPeriod=0), flush immediately
+	if s.flusher != nil && (s.flushPeriod == 0 || time.Since(s.lastFlush) >= s.flushPeriod) {
 		s.flusher.Flush()
 		s.lastFlush = time.Now()
 	}
