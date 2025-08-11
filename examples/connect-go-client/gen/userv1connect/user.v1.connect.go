@@ -33,19 +33,29 @@ const (
 // reflection-formatted method names, remove the leading slash and convert the remaining slash to a
 // period.
 const (
-	// UserServiceListUsersProcedure is the fully-qualified name of the UserService's ListUsers RPC.
-	UserServiceListUsersProcedure = "/user.v1.UserService/ListUsers"
+	// UserServiceUserChatProcedure is the fully-qualified name of the UserService's UserChat RPC.
+	UserServiceUserChatProcedure = "/user.v1.UserService/UserChat"
 	// UserServiceCreateUserProcedure is the fully-qualified name of the UserService's CreateUser RPC.
 	UserServiceCreateUserProcedure = "/user.v1.UserService/CreateUser"
 	// UserServiceGetUserProcedure is the fully-qualified name of the UserService's GetUser RPC.
 	UserServiceGetUserProcedure = "/user.v1.UserService/GetUser"
+	// UserServiceListUsersProcedure is the fully-qualified name of the UserService's ListUsers RPC.
+	UserServiceListUsersProcedure = "/user.v1.UserService/ListUsers"
+	// UserServiceStreamUsersProcedure is the fully-qualified name of the UserService's StreamUsers RPC.
+	UserServiceStreamUsersProcedure = "/user.v1.UserService/StreamUsers"
+	// UserServiceBatchCreateUsersProcedure is the fully-qualified name of the UserService's
+	// BatchCreateUsers RPC.
+	UserServiceBatchCreateUsersProcedure = "/user.v1.UserService/BatchCreateUsers"
 )
 
 // UserServiceClient is a client for the user.v1.UserService service.
 type UserServiceClient interface {
-	ListUsers(context.Context, *connect.Request[gen.ListUsersRequest]) (*connect.Response[gen.ListUsersResponse], error)
+	UserChat(context.Context) *connect.BidiStreamForClient[gen.ChatRequest, gen.ChatResponse]
 	CreateUser(context.Context, *connect.Request[gen.CreateUserRequest]) (*connect.Response[gen.CreateUserResponse], error)
 	GetUser(context.Context, *connect.Request[gen.GetUserRequest]) (*connect.Response[gen.GetUserResponse], error)
+	ListUsers(context.Context, *connect.Request[gen.ListUsersRequest]) (*connect.Response[gen.ListUsersResponse], error)
+	StreamUsers(context.Context, *connect.Request[gen.StreamUsersRequest]) (*connect.ServerStreamForClient[gen.User], error)
+	BatchCreateUsers(context.Context) *connect.ClientStreamForClient[gen.BatchUserRequest, gen.BatchCreateResponse]
 }
 
 // NewUserServiceClient constructs a client for the user.v1.UserService service. By default, it uses
@@ -59,10 +69,10 @@ func NewUserServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 	baseURL = strings.TrimRight(baseURL, "/")
 	userServiceMethods := gen.File_user_v1_proto.Services().ByName("UserService").Methods()
 	return &userServiceClient{
-		listUsers: connect.NewClient[gen.ListUsersRequest, gen.ListUsersResponse](
+		userChat: connect.NewClient[gen.ChatRequest, gen.ChatResponse](
 			httpClient,
-			baseURL+UserServiceListUsersProcedure,
-			connect.WithSchema(userServiceMethods.ByName("ListUsers")),
+			baseURL+UserServiceUserChatProcedure,
+			connect.WithSchema(userServiceMethods.ByName("UserChat")),
 			connect.WithClientOptions(opts...),
 		),
 		createUser: connect.NewClient[gen.CreateUserRequest, gen.CreateUserResponse](
@@ -77,19 +87,40 @@ func NewUserServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			connect.WithSchema(userServiceMethods.ByName("GetUser")),
 			connect.WithClientOptions(opts...),
 		),
+		listUsers: connect.NewClient[gen.ListUsersRequest, gen.ListUsersResponse](
+			httpClient,
+			baseURL+UserServiceListUsersProcedure,
+			connect.WithSchema(userServiceMethods.ByName("ListUsers")),
+			connect.WithClientOptions(opts...),
+		),
+		streamUsers: connect.NewClient[gen.StreamUsersRequest, gen.User](
+			httpClient,
+			baseURL+UserServiceStreamUsersProcedure,
+			connect.WithSchema(userServiceMethods.ByName("StreamUsers")),
+			connect.WithClientOptions(opts...),
+		),
+		batchCreateUsers: connect.NewClient[gen.BatchUserRequest, gen.BatchCreateResponse](
+			httpClient,
+			baseURL+UserServiceBatchCreateUsersProcedure,
+			connect.WithSchema(userServiceMethods.ByName("BatchCreateUsers")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
 // userServiceClient implements UserServiceClient.
 type userServiceClient struct {
-	listUsers  *connect.Client[gen.ListUsersRequest, gen.ListUsersResponse]
-	createUser *connect.Client[gen.CreateUserRequest, gen.CreateUserResponse]
-	getUser    *connect.Client[gen.GetUserRequest, gen.GetUserResponse]
+	userChat         *connect.Client[gen.ChatRequest, gen.ChatResponse]
+	createUser       *connect.Client[gen.CreateUserRequest, gen.CreateUserResponse]
+	getUser          *connect.Client[gen.GetUserRequest, gen.GetUserResponse]
+	listUsers        *connect.Client[gen.ListUsersRequest, gen.ListUsersResponse]
+	streamUsers      *connect.Client[gen.StreamUsersRequest, gen.User]
+	batchCreateUsers *connect.Client[gen.BatchUserRequest, gen.BatchCreateResponse]
 }
 
-// ListUsers calls user.v1.UserService.ListUsers.
-func (c *userServiceClient) ListUsers(ctx context.Context, req *connect.Request[gen.ListUsersRequest]) (*connect.Response[gen.ListUsersResponse], error) {
-	return c.listUsers.CallUnary(ctx, req)
+// UserChat calls user.v1.UserService.UserChat.
+func (c *userServiceClient) UserChat(ctx context.Context) *connect.BidiStreamForClient[gen.ChatRequest, gen.ChatResponse] {
+	return c.userChat.CallBidiStream(ctx)
 }
 
 // CreateUser calls user.v1.UserService.CreateUser.
@@ -102,11 +133,29 @@ func (c *userServiceClient) GetUser(ctx context.Context, req *connect.Request[ge
 	return c.getUser.CallUnary(ctx, req)
 }
 
+// ListUsers calls user.v1.UserService.ListUsers.
+func (c *userServiceClient) ListUsers(ctx context.Context, req *connect.Request[gen.ListUsersRequest]) (*connect.Response[gen.ListUsersResponse], error) {
+	return c.listUsers.CallUnary(ctx, req)
+}
+
+// StreamUsers calls user.v1.UserService.StreamUsers.
+func (c *userServiceClient) StreamUsers(ctx context.Context, req *connect.Request[gen.StreamUsersRequest]) (*connect.ServerStreamForClient[gen.User], error) {
+	return c.streamUsers.CallServerStream(ctx, req)
+}
+
+// BatchCreateUsers calls user.v1.UserService.BatchCreateUsers.
+func (c *userServiceClient) BatchCreateUsers(ctx context.Context) *connect.ClientStreamForClient[gen.BatchUserRequest, gen.BatchCreateResponse] {
+	return c.batchCreateUsers.CallClientStream(ctx)
+}
+
 // UserServiceHandler is an implementation of the user.v1.UserService service.
 type UserServiceHandler interface {
-	ListUsers(context.Context, *connect.Request[gen.ListUsersRequest]) (*connect.Response[gen.ListUsersResponse], error)
+	UserChat(context.Context, *connect.BidiStream[gen.ChatRequest, gen.ChatResponse]) error
 	CreateUser(context.Context, *connect.Request[gen.CreateUserRequest]) (*connect.Response[gen.CreateUserResponse], error)
 	GetUser(context.Context, *connect.Request[gen.GetUserRequest]) (*connect.Response[gen.GetUserResponse], error)
+	ListUsers(context.Context, *connect.Request[gen.ListUsersRequest]) (*connect.Response[gen.ListUsersResponse], error)
+	StreamUsers(context.Context, *connect.Request[gen.StreamUsersRequest], *connect.ServerStream[gen.User]) error
+	BatchCreateUsers(context.Context, *connect.ClientStream[gen.BatchUserRequest]) (*connect.Response[gen.BatchCreateResponse], error)
 }
 
 // NewUserServiceHandler builds an HTTP handler from the service implementation. It returns the path
@@ -116,10 +165,10 @@ type UserServiceHandler interface {
 // and JSON codecs. They also support gzip compression.
 func NewUserServiceHandler(svc UserServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
 	userServiceMethods := gen.File_user_v1_proto.Services().ByName("UserService").Methods()
-	userServiceListUsersHandler := connect.NewUnaryHandler(
-		UserServiceListUsersProcedure,
-		svc.ListUsers,
-		connect.WithSchema(userServiceMethods.ByName("ListUsers")),
+	userServiceUserChatHandler := connect.NewBidiStreamHandler(
+		UserServiceUserChatProcedure,
+		svc.UserChat,
+		connect.WithSchema(userServiceMethods.ByName("UserChat")),
 		connect.WithHandlerOptions(opts...),
 	)
 	userServiceCreateUserHandler := connect.NewUnaryHandler(
@@ -134,14 +183,38 @@ func NewUserServiceHandler(svc UserServiceHandler, opts ...connect.HandlerOption
 		connect.WithSchema(userServiceMethods.ByName("GetUser")),
 		connect.WithHandlerOptions(opts...),
 	)
+	userServiceListUsersHandler := connect.NewUnaryHandler(
+		UserServiceListUsersProcedure,
+		svc.ListUsers,
+		connect.WithSchema(userServiceMethods.ByName("ListUsers")),
+		connect.WithHandlerOptions(opts...),
+	)
+	userServiceStreamUsersHandler := connect.NewServerStreamHandler(
+		UserServiceStreamUsersProcedure,
+		svc.StreamUsers,
+		connect.WithSchema(userServiceMethods.ByName("StreamUsers")),
+		connect.WithHandlerOptions(opts...),
+	)
+	userServiceBatchCreateUsersHandler := connect.NewClientStreamHandler(
+		UserServiceBatchCreateUsersProcedure,
+		svc.BatchCreateUsers,
+		connect.WithSchema(userServiceMethods.ByName("BatchCreateUsers")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/user.v1.UserService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
-		case UserServiceListUsersProcedure:
-			userServiceListUsersHandler.ServeHTTP(w, r)
+		case UserServiceUserChatProcedure:
+			userServiceUserChatHandler.ServeHTTP(w, r)
 		case UserServiceCreateUserProcedure:
 			userServiceCreateUserHandler.ServeHTTP(w, r)
 		case UserServiceGetUserProcedure:
 			userServiceGetUserHandler.ServeHTTP(w, r)
+		case UserServiceListUsersProcedure:
+			userServiceListUsersHandler.ServeHTTP(w, r)
+		case UserServiceStreamUsersProcedure:
+			userServiceStreamUsersHandler.ServeHTTP(w, r)
+		case UserServiceBatchCreateUsersProcedure:
+			userServiceBatchCreateUsersHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -151,8 +224,8 @@ func NewUserServiceHandler(svc UserServiceHandler, opts ...connect.HandlerOption
 // UnimplementedUserServiceHandler returns CodeUnimplemented from all methods.
 type UnimplementedUserServiceHandler struct{}
 
-func (UnimplementedUserServiceHandler) ListUsers(context.Context, *connect.Request[gen.ListUsersRequest]) (*connect.Response[gen.ListUsersResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("user.v1.UserService.ListUsers is not implemented"))
+func (UnimplementedUserServiceHandler) UserChat(context.Context, *connect.BidiStream[gen.ChatRequest, gen.ChatResponse]) error {
+	return connect.NewError(connect.CodeUnimplemented, errors.New("user.v1.UserService.UserChat is not implemented"))
 }
 
 func (UnimplementedUserServiceHandler) CreateUser(context.Context, *connect.Request[gen.CreateUserRequest]) (*connect.Response[gen.CreateUserResponse], error) {
@@ -161,4 +234,16 @@ func (UnimplementedUserServiceHandler) CreateUser(context.Context, *connect.Requ
 
 func (UnimplementedUserServiceHandler) GetUser(context.Context, *connect.Request[gen.GetUserRequest]) (*connect.Response[gen.GetUserResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("user.v1.UserService.GetUser is not implemented"))
+}
+
+func (UnimplementedUserServiceHandler) ListUsers(context.Context, *connect.Request[gen.ListUsersRequest]) (*connect.Response[gen.ListUsersResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("user.v1.UserService.ListUsers is not implemented"))
+}
+
+func (UnimplementedUserServiceHandler) StreamUsers(context.Context, *connect.Request[gen.StreamUsersRequest], *connect.ServerStream[gen.User]) error {
+	return connect.NewError(connect.CodeUnimplemented, errors.New("user.v1.UserService.StreamUsers is not implemented"))
+}
+
+func (UnimplementedUserServiceHandler) BatchCreateUsers(context.Context, *connect.ClientStream[gen.BatchUserRequest]) (*connect.Response[gen.BatchCreateResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("user.v1.UserService.BatchCreateUsers is not implemented"))
 }

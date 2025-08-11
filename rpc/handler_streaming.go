@@ -348,8 +348,8 @@ func (s *Service) sendConnectClientStreamResponse(w http.ResponseWriter, r *http
 	// Connect expects an empty JSON object {} in the end frame
 	endPayload := []byte("{}")
 	endFrame := make([]byte, frameHeaderLength+len(endPayload))
-	endFrame[0] = 0x02 // end-of-stream flag
-	binary.BigEndian.PutUint32(endFrame[1:5], uint32(len(endPayload)))
+	endFrame[0] = 0x02                                                 // end-of-stream flag
+	binary.BigEndian.PutUint32(endFrame[1:5], uint32(len(endPayload))) //nolint:gosec // length is bounded
 	copy(endFrame[5:], endPayload)
 	_, _ = w.Write(endFrame)
 }
@@ -507,14 +507,13 @@ func (s *Service) handleBidiStreamRequest(w http.ResponseWriter, r *http.Request
 	// Add handler context to the request context
 	reqCtx = context.WithValue(reqCtx, handlerContextKey, ctx)
 
-	// Send initial headers for gRPC protocol
-	if p.isGRPC {
-		stream.writer.sendHeaders()
-		stream.writer.headersSent = true
-		// Flush immediately to establish the stream
-		if stream.writer.flusher != nil {
-			stream.writer.flusher.Flush()
-		}
+	// Send initial headers for all protocols in bidirectional streaming
+	// This is critical to establish the HTTP/2 stream properly
+	stream.writer.sendHeaders()
+	stream.writer.headersSent = true
+	// Flush immediately to establish the stream
+	if stream.writer.flusher != nil {
+		stream.writer.flusher.Flush()
 	}
 
 	// Call the bidirectional streaming handler
@@ -573,62 +572,87 @@ type serverStreamWriter struct {
 	compressionType string // e.g., "gzip", "br", "zstd"
 	canCompress     bool
 	shouldCompress  bool // whether to actually compress messages
+
+	// Protocol handler
+	streamProtocol StreamProtocol
 }
 
 func newServerStreamWriter(w http.ResponseWriter, r *http.Request, ctx *handlerContext, p protocolInfo) *serverStreamWriter {
 	flusher, _ := w.(http.Flusher)
 
-	// For bidirectional streaming, flush immediately after each message
-	flushPeriod := defaultFlushInterval
-	if ctx != nil && ctx.method != nil && ctx.method.StreamType == StreamTypeBidiStream {
-		flushPeriod = 0 // Immediate flush for bidi streams
-	}
-
 	s := &serverStreamWriter{
-		w:           w,
-		r:           r,
-		ctx:         ctx,
-		protocol:    p,
-		flusher:     flusher,
-		flushPeriod: flushPeriod,
-		lastFlush:   time.Now(),
+		w:              w,
+		r:              r,
+		ctx:            ctx,
+		protocol:       p,
+		flusher:        flusher,
+		flushPeriod:    determineFlushPeriod(ctx),
+		lastFlush:      time.Now(),
+		streamProtocol: getStreamProtocol(p),
 	}
 
-	// Setup compression if client accepts it
-	var acceptEncoding string
+	// Setup compression
+	setupStreamCompression(s, r, p)
+
+	// Setup encoding function
+	s.encodeFunc = createStreamEncodingFunction(ctx, p)
+
+	return s
+}
+
+// determineFlushPeriod calculates the flush period based on stream type
+func determineFlushPeriod(ctx *handlerContext) time.Duration {
+	if ctx != nil && ctx.method != nil && ctx.method.StreamType == StreamTypeBidiStream {
+		return 0 // Immediate flush for bidi streams
+	}
+	return defaultFlushInterval
+}
+
+// setupStreamCompression configures compression for the stream
+func setupStreamCompression(s *serverStreamWriter, r *http.Request, p protocolInfo) {
+	acceptEncoding := getStreamAcceptEncoding(r, p)
+	if acceptEncoding == "" {
+		return
+	}
+
+	if c, encoding := selectCompressor(acceptEncoding); c != nil {
+		s.compressor = c
+		s.compressionType = encoding
+		s.shouldCompress = true
+		s.canCompress = true
+	}
+}
+
+// getStreamAcceptEncoding gets the appropriate accept-encoding header based on protocol
+func getStreamAcceptEncoding(r *http.Request, p protocolInfo) string {
 	if p.isGRPC || p.isGRPCWeb {
-		acceptEncoding = r.Header.Get("grpc-accept-encoding")
-		if acceptEncoding == "" {
-			acceptEncoding = r.Header.Get("grpc-encoding")
+		if enc := r.Header.Get("grpc-accept-encoding"); enc != "" {
+			return enc
 		}
-	} else if p.isConnect {
-		acceptEncoding = r.Header.Get("Connect-Accept-Encoding")
-		if acceptEncoding == "" {
-			acceptEncoding = r.Header.Get("Accept-Encoding")
-		}
+		return r.Header.Get("grpc-encoding")
 	}
-
-	// Select best compressor based on client preferences
-	if acceptEncoding != "" {
-		if c, encoding := selectCompressor(acceptEncoding); c != nil {
-			s.compressor = c
-			s.compressionType = encoding
-			s.shouldCompress = true
-			s.canCompress = true
+	if p.isConnect {
+		if enc := r.Header.Get("Connect-Accept-Encoding"); enc != "" {
+			return enc
 		}
+		return r.Header.Get("Accept-Encoding")
 	}
+	return r.Header.Get("Accept-Encoding")
+}
 
-	// Pre-determine encoding function based on protocol
+// createStreamEncodingFunction creates the appropriate encoding function based on protocol
+func createStreamEncodingFunction(ctx *handlerContext, p protocolInfo) func(any) ([]byte, error) {
 	isJSON := p.wantsJSON
+
 	switch {
 	case p.isGRPC && !isJSON:
 		// gRPC protobuf encoding
-		s.encodeFunc = func(msg any) ([]byte, error) {
+		return func(msg any) ([]byte, error) {
 			return ctx.outputCodec.MarshalStruct(msg)
 		}
 	case ctx.useProtoOutput && !isJSON:
 		// Connect protobuf encoding
-		s.encodeFunc = func(msg any) ([]byte, error) {
+		return func(msg any) ([]byte, error) {
 			if protoMsg, ok := msg.(proto.Message); ok {
 				return proto.Marshal(protoMsg)
 			}
@@ -636,15 +660,13 @@ func newServerStreamWriter(w http.ResponseWriter, r *http.Request, ctx *handlerC
 		}
 	case isJSON:
 		// JSON encoding
-		s.encodeFunc = json.Marshal
+		return json.Marshal
 	default:
 		// Default: use codec
-		s.encodeFunc = func(msg any) ([]byte, error) {
+		return func(msg any) ([]byte, error) {
 			return ctx.outputCodec.MarshalStruct(msg)
 		}
 	}
-
-	return s
 }
 
 // Context returns the stream context
@@ -698,23 +720,8 @@ func (s *serverStreamWriter) Send(msg any) error {
 		}
 	}
 
-	// Write the message based on protocol
-	var writeErr error
-	switch {
-	case s.protocol.isConnect:
-		writeErr = s.sendConnectMessage(data, compressed)
-	case s.protocol.isGRPC:
-		writeErr = s.sendGRPCMessage(data, compressed)
-	default:
-		// Plain HTTP streaming (newline-delimited JSON)
-		_, writeErr = s.w.Write(data)
-		if writeErr == nil {
-			_, writeErr = s.w.Write([]byte("\n"))
-		}
-		if writeErr == nil && s.flusher != nil {
-			s.flusher.Flush()
-		}
-	}
+	// Write the message using protocol handler
+	writeErr := s.streamProtocol.WriteFrame(s.w, data, compressed)
 
 	// Update state with lock
 	if writeErr != nil {
@@ -724,7 +731,18 @@ func (s *serverStreamWriter) Send(msg any) error {
 	} else {
 		s.mu.Lock()
 		s.messageCount++
+		// Check if we should flush based on the flush period
+		// Note: flushPeriod is already 0 for bidi streams (set in determineFlushPeriod)
+		shouldFlush := s.flushPeriod == 0 || time.Since(s.lastFlush) >= s.flushPeriod
+		if shouldFlush {
+			s.lastFlush = time.Now()
+		}
 		s.mu.Unlock()
+
+		// Flush outside of lock if needed
+		if shouldFlush && s.flusher != nil {
+			s.flusher.Flush()
+		}
 	}
 
 	return writeErr
@@ -769,79 +787,6 @@ func (s *serverStreamWriter) sendHeaders() {
 	s.w.WriteHeader(http.StatusOK)
 }
 
-func (s *serverStreamWriter) sendConnectMessage(data []byte, compressed bool) error {
-	// Connect uses a simple length-prefixed format for streaming
-	// Format: 1 byte flags + 4 bytes length (big-endian) + data
-
-	// Get a frame buffer from pool
-	frameSize := frameHeaderLength + len(data)
-	frameBuf := s.getFrameBuffer(frameSize)
-	defer s.putFrameBuffer(frameBuf)
-
-	// Build frame in single buffer
-	frame := (*frameBuf)[:frameSize]
-	// Set compression flag if message is compressed
-	if compressed {
-		frame[0] = 1 // compression flag
-	} else {
-		frame[0] = 0 // no compression
-	}
-	binary.BigEndian.PutUint32(frame[frameLengthOffset:frameLengthSize], uint32(len(data))) //nolint:gosec // length is bounded by message size limits
-	copy(frame[frameHeaderLength:], data)
-
-	// Single write for entire frame
-	if _, err := s.w.Write(frame); err != nil {
-		return err
-	}
-
-	// Smart flushing: flush if enough time has passed since last flush
-	// This balances latency and throughput
-	// For bidi streams (flushPeriod=0), flush immediately
-	if s.flusher != nil && (s.flushPeriod == 0 || time.Since(s.lastFlush) >= s.flushPeriod) {
-		s.flusher.Flush()
-		s.lastFlush = time.Now()
-	}
-
-	return nil
-}
-
-func (s *serverStreamWriter) sendGRPCMessage(data []byte, compressed bool) error {
-	// gRPC frame format: 1 byte flags + 4 bytes length + data
-	frameSize := frameHeaderLength + len(data)
-	frameBuf := s.getFrameBuffer(frameSize)
-	defer s.putFrameBuffer(frameBuf)
-
-	frame := (*frameBuf)[:frameSize]
-
-	// Set compression flag if message is compressed
-	if compressed {
-		frame[0] = 1 // compression flag
-	} else {
-		frame[0] = 0 // no compression
-	}
-
-	// Length (big-endian)
-	binary.BigEndian.PutUint32(frame[1:5], uint32(len(data))) //nolint:gosec // length is bounded by message size limits
-
-	// Data
-	copy(frame[5:], data)
-
-	// Write frame
-	if _, err := s.w.Write(frame); err != nil {
-		return err
-	}
-
-	// Smart flushing: flush if enough time has passed since last flush
-	// This balances latency and throughput
-	// For bidi streams (flushPeriod=0), flush immediately
-	if s.flusher != nil && (s.flushPeriod == 0 || time.Since(s.lastFlush) >= s.flushPeriod) {
-		s.flusher.Flush()
-		s.lastFlush = time.Now()
-	}
-
-	return nil
-}
-
 func (s *serverStreamWriter) sendError(err error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -863,12 +808,13 @@ func (s *serverStreamWriter) sendError(err error) {
 		rpcErr = NewError(CodeInternal, err.Error())
 	}
 
-	if s.protocol.isConnect {
-		// For Connect, send error as final message with end-of-stream marker
-		s.sendConnectError(rpcErr)
-	} else if s.protocol.isGRPC {
-		// For gRPC, errors are sent in trailers
+	// Send error based on protocol
+	if s.streamProtocol.SupportsTrailers() {
+		// gRPC uses trailers for errors
 		s.sendGRPCTrailers(rpcErr)
+	} else {
+		// Connect sends errors in the stream
+		s.sendConnectError(rpcErr)
 	}
 }
 
@@ -879,18 +825,8 @@ func (s *serverStreamWriter) sendConnectError(err *Error) {
 		s.headersSent = true
 	}
 
-	// Connect error format with end-of-stream marker
-	errData := map[string]any{
-		"error": map[string]any{
-			"code":    string(err.Code),
-			"message": err.Message,
-		},
-	}
-	if err.Details != nil {
-		errData["error"].(map[string]any)["details"] = err.Details
-	}
-
-	data, _ := json.Marshal(errData)
+	// Format error using protocol handler
+	data := s.streamProtocol.FormatError(err)
 
 	// Send with end-of-stream flag (0x02)
 	if _, err := s.w.Write([]byte{0x02}); err != nil {
@@ -957,8 +893,8 @@ func (s *serverStreamWriter) finalize() {
 
 // finalizeConnect handles Connect protocol finalization
 func (s *serverStreamWriter) finalizeConnect() {
-	// Send end-of-stream marker
-	if err := s.sendConnectEndOfStream(); err != nil {
+	// Send end-of-stream marker using protocol handler
+	if err := s.streamProtocol.WriteEndOfStream(s.w); err != nil {
 		return
 	}
 
@@ -969,19 +905,6 @@ func (s *serverStreamWriter) finalizeConnect() {
 	if s.flusher != nil {
 		s.flusher.Flush()
 	}
-}
-
-// sendConnectEndOfStream sends the Connect end-of-stream marker
-func (s *serverStreamWriter) sendConnectEndOfStream() error {
-	endMessage := []byte("{}")
-	if _, err := s.w.Write([]byte{0x02}); err != nil { // End-of-stream flag
-		return err
-	}
-	if err := binary.Write(s.w, binary.BigEndian, uint32(len(endMessage))); err != nil { //nolint:gosec // bounded by message size
-		return err
-	}
-	_, err := s.w.Write(endMessage)
-	return err
 }
 
 // applyConnectTrailers applies trailers as headers with "trailer-" prefix
@@ -1025,26 +948,6 @@ func (s *serverStreamWriter) finalizeDefault() {
 	if s.flusher != nil {
 		s.flusher.Flush()
 	}
-}
-
-// getFrameBuffer gets a buffer from the pool
-func (s *serverStreamWriter) getFrameBuffer(size int) *[]byte {
-	buf := streamFramePool.Get().(*[]byte)
-	if cap(*buf) < size {
-		// Need a bigger buffer
-		newBuf := make([]byte, size)
-		return &newBuf
-	}
-	// Resize existing buffer
-	*buf = (*buf)[:size]
-	return buf
-}
-
-// putFrameBuffer returns a buffer to the pool
-func (s *serverStreamWriter) putFrameBuffer(buf *[]byte) {
-	// Reset buffer before returning to pool
-	*buf = (*buf)[:0]
-	streamFramePool.Put(buf)
 }
 
 // Implement typed server stream

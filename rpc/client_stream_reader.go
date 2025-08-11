@@ -2,7 +2,6 @@ package rpc
 
 import (
 	"context"
-	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -34,14 +33,18 @@ type clientStreamReader struct {
 	// Compression settings
 	decompressor   Compressor
 	hasCompression bool
+
+	// Protocol handler
+	streamProtocol StreamProtocol
 }
 
 func newClientStreamReader(r *http.Request, ctx *handlerContext, p protocolInfo) *clientStreamReader {
 	reader := &clientStreamReader{
-		r:         r,
-		ctx:       ctx,
-		protocol:  p,
-		inputType: ctx.method.InputType,
+		r:              r,
+		ctx:            ctx,
+		protocol:       p,
+		inputType:      ctx.method.InputType,
+		streamProtocol: getStreamProtocol(p),
 	}
 
 	// Setup decompression
@@ -55,101 +58,111 @@ func newClientStreamReader(r *http.Request, ctx *handlerContext, p protocolInfo)
 
 func setupDecompression(reader *clientStreamReader, r *http.Request, p protocolInfo) {
 	var encoding string
-	if p.isGRPC || p.isGRPCWeb {
+	if p.isGRPC {
 		encoding = r.Header.Get("grpc-encoding")
 	} else if p.isConnect {
-		encoding = r.Header.Get("Content-Encoding")
+		encoding = r.Header.Get("Connect-Content-Encoding")
 	}
 
-	if encoding != "" && encoding != "identity" {
-		if decompressor, ok := GetCompressor(encoding); ok {
-			reader.decompressor = decompressor
+	if encoding != "" {
+		if compressor, ok := GetCompressor(encoding); ok {
+			reader.decompressor = compressor
 			reader.hasCompression = true
 		}
 	}
 }
 
 func setupDecodingFunction(reader *clientStreamReader, r *http.Request, ctx *handlerContext, p protocolInfo) {
+	// Determine if we're dealing with JSON
 	contentType := r.Header.Get("Content-Type")
-	isJSON := p.wantsJSON || (contentType != "" && (contentType == contentTypeJSON ||
-		contentType == contentTypeConnectJSON ||
-		contentType == "application/grpc+json" ||
-		contentType == "application/grpc-web+json"))
+	isJSON := p.wantsJSON || contentType == contentTypeJSON
 
 	switch {
 	case p.isGRPC && !isJSON:
-		// gRPC protobuf decoding - use same approach as unary
-		reader.decodeFunc = func(data []byte) (any, error) {
-			if ctx.inputCodec != nil {
-				// Decode to hyperpb.Message first
-				hyperpbMsg, err := ctx.inputCodec.Unmarshal(data)
-				if err != nil {
-					return nil, err
-				}
-				defer ctx.inputCodec.ReleaseMessage(hyperpbMsg)
-
-				// Create a new instance of the struct
-				result := reflect.New(reader.inputType).Interface()
-
-				// Convert proto to struct using the same utility as unary
-				if err := reflectutil.ProtoToStruct(hyperpbMsg.ProtoReflect(), result); err != nil {
-					return nil, fmt.Errorf("failed to convert proto to struct: %v", err)
-				}
-
-				return result, nil
-			}
-
-			// Fallback to direct protobuf decoding
-			msg := reflect.New(reader.inputType).Interface()
-			if protoMsg, ok := msg.(proto.Message); ok {
-				return msg, proto.Unmarshal(data, protoMsg)
-			}
-			return nil, fmt.Errorf("expected proto.Message, got %T", msg)
-		}
+		reader.decodeFunc = createGRPCDecoder(reader.inputType, ctx)
 	case ctx.useProtoInput && !isJSON:
-		// Connect protobuf decoding
-		reader.decodeFunc = func(data []byte) (any, error) {
-			msg := reflect.New(reader.inputType).Interface()
-			if protoMsg, ok := msg.(proto.Message); ok {
-				return msg, proto.Unmarshal(data, protoMsg)
-			}
-			return nil, fmt.Errorf("expected proto.Message, got %T", msg)
-		}
+		reader.decodeFunc = createProtoDecoder(reader.inputType)
 	case isJSON:
-		// JSON decoding
-		reader.decodeFunc = func(data []byte) (any, error) {
-			msg := reflect.New(reader.inputType).Interface()
-			return msg, json.Unmarshal(data, msg)
-		}
+		reader.decodeFunc = createJSONDecoder(reader.inputType)
 	default:
-		// Default: use codec with proper conversion
-		reader.decodeFunc = func(data []byte) (any, error) {
-			if ctx.inputCodec != nil {
-				// Decode to hyperpb.Message first
-				hyperpbMsg, err := ctx.inputCodec.Unmarshal(data)
-				if err != nil {
-					return nil, err
-				}
-				defer ctx.inputCodec.ReleaseMessage(hyperpbMsg)
+		reader.decodeFunc = createDefaultDecoder(reader.inputType, ctx)
+	}
+}
 
-				// Create a new instance of the struct
-				result := reflect.New(reader.inputType).Interface()
+func createGRPCDecoder(inputType reflect.Type, ctx *handlerContext) func([]byte) (any, error) {
+	return func(data []byte) (any, error) {
+		if ctx.inputCodec != nil {
+			// Decode to hyperpb.Message first
+			hyperpbMsg, err := ctx.inputCodec.Unmarshal(data)
+			if err != nil {
+				return nil, err
+			}
+			defer ctx.inputCodec.ReleaseMessage(hyperpbMsg)
 
-				// Convert proto to struct using the same utility as unary
-				if err := reflectutil.ProtoToStruct(hyperpbMsg.ProtoReflect(), result); err != nil {
-					return nil, fmt.Errorf("failed to convert proto to struct: %v", err)
-				}
+			// Create a new instance of the struct
+			result := reflect.New(inputType).Interface()
 
-				return result, nil
+			// Convert proto to struct using the same utility as unary
+			if err := reflectutil.ProtoToStruct(hyperpbMsg.ProtoReflect(), result); err != nil {
+				return nil, fmt.Errorf("failed to convert proto to struct: %v", err)
 			}
 
-			// Fallback if no codec
-			msg := reflect.New(reader.inputType).Interface()
-			if protoMsg, ok := msg.(proto.Message); ok {
-				return msg, proto.Unmarshal(data, protoMsg)
-			}
-			return nil, fmt.Errorf("expected proto.Message, got %T", msg)
+			return result, nil
 		}
+
+		// Fallback to direct protobuf decoding
+		msg := reflect.New(inputType).Interface()
+		if protoMsg, ok := msg.(proto.Message); ok {
+			return msg, proto.Unmarshal(data, protoMsg)
+		}
+		return nil, fmt.Errorf("expected proto.Message, got %T", msg)
+	}
+}
+
+func createProtoDecoder(inputType reflect.Type) func([]byte) (any, error) {
+	return func(data []byte) (any, error) {
+		msg := reflect.New(inputType).Interface()
+		if protoMsg, ok := msg.(proto.Message); ok {
+			return msg, proto.Unmarshal(data, protoMsg)
+		}
+		return nil, fmt.Errorf("expected proto.Message, got %T", msg)
+	}
+}
+
+func createJSONDecoder(inputType reflect.Type) func([]byte) (any, error) {
+	return func(data []byte) (any, error) {
+		msg := reflect.New(inputType).Interface()
+		return msg, json.Unmarshal(data, msg)
+	}
+}
+
+func createDefaultDecoder(inputType reflect.Type, ctx *handlerContext) func([]byte) (any, error) {
+	return func(data []byte) (any, error) {
+		if ctx.inputCodec != nil {
+			// Decode to hyperpb.Message first
+			hyperpbMsg, err := ctx.inputCodec.Unmarshal(data)
+			if err != nil {
+				return nil, err
+			}
+			defer ctx.inputCodec.ReleaseMessage(hyperpbMsg)
+
+			// Create a new instance of the struct
+			result := reflect.New(inputType).Interface()
+
+			// Convert proto to struct using the same utility as unary
+			if err := reflectutil.ProtoToStruct(hyperpbMsg.ProtoReflect(), result); err != nil {
+				return nil, fmt.Errorf("failed to convert proto to struct: %v", err)
+			}
+
+			return result, nil
+		}
+
+		// Fallback if no codec
+		msg := reflect.New(inputType).Interface()
+		if protoMsg, ok := msg.(proto.Message); ok {
+			return msg, proto.Unmarshal(data, protoMsg)
+		}
+		return nil, fmt.Errorf("expected proto.Message, got %T", msg)
 	}
 }
 
@@ -160,58 +173,113 @@ func (c *clientStreamReader) Context() context.Context {
 
 // Recv receives a message from the client
 func (c *clientStreamReader) Recv() (any, error) {
+	// Check initial state
+	if err := c.checkInitialState(); err != nil {
+		return nil, err
+	}
+
+	// Read frame from stream
+	data, compressed, isEndOfStream, err := c.streamProtocol.ReadFrame(c.r.Body, c.ctx.options.MaxReceiveMessageSize)
+
+	// Handle end-of-stream
+	if isEndOfStream {
+		return nil, c.handleEndOfStream(data)
+	}
+
+	// Handle read error
+	if err != nil {
+		return nil, c.handleReadError(err)
+	}
+
+	// Decompress if needed
+	data, err = c.decompressData(data, compressed)
+	if err != nil {
+		return nil, err
+	}
+
+	// Decode and validate message
+	return c.decodeAndValidate(data)
+}
+
+// checkInitialState checks if the reader is in a valid state to receive
+func (c *clientStreamReader) checkInitialState() error {
 	c.mu.Lock()
+	defer c.mu.Unlock()
+
 	if c.closed {
-		c.mu.Unlock()
-		return nil, io.EOF
+		return io.EOF
 	}
 	if c.err != nil {
-		err := c.err
-		c.mu.Unlock()
-		return nil, err
+		return c.err
 	}
-	c.mu.Unlock()
-
-	// Read next message based on protocol
-	var data []byte
-	var err error
-
-	// Debug logging
 	if c.ctx == nil {
-		return nil, fmt.Errorf("handler context is nil")
+		return fmt.Errorf("handler context is nil")
 	}
+	return nil
+}
 
-	switch {
-	case c.protocol.isGRPC:
-		data, err = c.recvGRPCMessage()
-	case c.protocol.isConnect:
-		data, err = c.recvConnectMessage()
-	default:
-		// Plain HTTP - read entire body (single message)
-		data, err = c.recvPlainMessage()
-	}
-
-	if err != nil {
-		c.mu.Lock()
-		c.err = err
-		if err == io.EOF {
+// handleEndOfStream processes end-of-stream scenarios
+func (c *clientStreamReader) handleEndOfStream(data []byte) error {
+	// Check if end-of-stream contains an error
+	if len(data) > 0 {
+		if parsedErr := c.streamProtocol.ParseError(data); parsedErr != nil {
+			c.mu.Lock()
+			c.err = parsedErr
 			c.closed = true
+			c.mu.Unlock()
+			return parsedErr
 		}
-		c.mu.Unlock()
-		return nil, err
 	}
 
-	// Check message size
-	if len(data) > c.ctx.options.MaxReceiveMessageSize {
-		err := NewError(CodeResourceExhausted,
-			fmt.Sprintf("message size %d exceeds maximum allowed size %d",
-				len(data), c.ctx.options.MaxReceiveMessageSize))
+	c.mu.Lock()
+	c.closed = true
+	c.mu.Unlock()
+	return io.EOF
+}
+
+// handleReadError processes read errors
+func (c *clientStreamReader) handleReadError(err error) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	c.err = err
+	if err == io.EOF {
+		c.closed = true
+	}
+	return err
+}
+
+// decompressData decompresses the data if needed
+func (c *clientStreamReader) decompressData(data []byte, compressed bool) ([]byte, error) {
+	if !compressed || !c.hasCompression {
+		return data, nil
+	}
+
+	decompressed, err := c.decompressor.Decompress(data)
+	if err != nil {
+		err := NewError(CodeInternal, fmt.Sprintf("failed to decompress message: %v", err))
 		c.mu.Lock()
 		c.err = err
 		c.mu.Unlock()
 		return nil, err
 	}
 
+	// Check decompressed size
+	if len(decompressed) > c.ctx.options.MaxReceiveMessageSize {
+		err := NewError(CodeResourceExhausted,
+			fmt.Sprintf("decompressed message size %d exceeds maximum allowed size %d",
+				len(decompressed), c.ctx.options.MaxReceiveMessageSize))
+		c.mu.Lock()
+		c.err = err
+		c.mu.Unlock()
+		return nil, err
+	}
+
+	return decompressed, nil
+}
+
+// decodeAndValidate decodes the message and validates it if enabled
+func (c *clientStreamReader) decodeAndValidate(data []byte) (any, error) {
 	// Decode the message
 	msg, err := c.decodeFunc(data)
 	if err != nil {
@@ -223,17 +291,12 @@ func (c *clientStreamReader) Recv() (any, error) {
 
 	// Validate if enabled
 	if c.ctx.options.EnableValidation {
-		if validator, ok := msg.(interface{ Validate() error }); ok {
-			if err := validator.Validate(); err != nil {
-				validationErr := NewError(CodeInvalidArgument, fmt.Sprintf("validation failed: %v", err))
-				c.mu.Lock()
-				c.err = validationErr
-				c.mu.Unlock()
-				return nil, validationErr
-			}
+		if err := c.validateMessage(msg); err != nil {
+			return nil, err
 		}
 	}
 
+	// Update message count
 	c.mu.Lock()
 	c.messageCount++
 	c.mu.Unlock()
@@ -241,175 +304,22 @@ func (c *clientStreamReader) Recv() (any, error) {
 	return msg, nil
 }
 
-// recvGRPCMessage reads a gRPC framed message
-func (c *clientStreamReader) recvGRPCMessage() ([]byte, error) {
-	// Read frame header
-	frameHeader := make([]byte, frameHeaderLength)
-	if _, err := io.ReadFull(c.r.Body, frameHeader); err != nil {
-		if err == io.EOF {
-			return nil, io.EOF
-		}
-		return nil, NewError(CodeInternal, fmt.Sprintf("failed to read gRPC frame header: %v", err))
+// validateMessage validates the message if it implements Validate
+func (c *clientStreamReader) validateMessage(msg any) error {
+	validator, ok := msg.(interface{ Validate() error })
+	if !ok {
+		return nil
 	}
 
-	// Parse frame header
-	compressionFlag := frameHeader[0]
-	messageLength := binary.BigEndian.Uint32(frameHeader[1:5])
-
-	// Check message size before allocating
-	if int(messageLength) > c.ctx.options.MaxReceiveMessageSize {
-		return nil, NewError(CodeResourceExhausted,
-			fmt.Sprintf("gRPC message size %d exceeds maximum allowed size %d",
-				messageLength, c.ctx.options.MaxReceiveMessageSize))
+	if err := validator.Validate(); err != nil {
+		validationErr := NewError(CodeInvalidArgument, fmt.Sprintf("validation failed: %v", err))
+		c.mu.Lock()
+		c.err = validationErr
+		c.mu.Unlock()
+		return validationErr
 	}
 
-	// Read message body
-	data := make([]byte, messageLength)
-	if _, err := io.ReadFull(c.r.Body, data); err != nil {
-		return nil, NewError(CodeInternal, fmt.Sprintf("failed to read gRPC message body: %v", err))
-	}
-
-	// Decompress if needed
-	if compressionFlag == 1 && c.hasCompression {
-		decompressed, err := c.decompressor.Decompress(data)
-		if err != nil {
-			return nil, NewError(CodeInternal, fmt.Sprintf("failed to decompress gRPC message: %v", err))
-		}
-		// Check decompressed size
-		if len(decompressed) > c.ctx.options.MaxReceiveMessageSize {
-			return nil, NewError(CodeResourceExhausted,
-				fmt.Sprintf("decompressed gRPC message size %d exceeds maximum allowed size %d",
-					len(decompressed), c.ctx.options.MaxReceiveMessageSize))
-		}
-		return decompressed, nil
-	}
-
-	return data, nil
-}
-
-// recvConnectMessage reads a Connect framed message
-func (c *clientStreamReader) recvConnectMessage() ([]byte, error) {
-	// Read frame header
-	frameHeader := make([]byte, frameHeaderLength)
-	if _, err := io.ReadFull(c.r.Body, frameHeader); err != nil {
-		if err == io.EOF {
-			return nil, io.EOF
-		}
-		return nil, NewError(CodeInternal, fmt.Sprintf("failed to read Connect frame header: %v", err))
-	}
-
-	// Check for end-of-stream marker
-	flags := frameHeader[0]
-	if flags&0x02 != 0 {
-		return c.handleEndOfStream(frameHeader)
-	}
-
-	// Parse regular message
-	return c.handleRegularMessage(frameHeader)
-}
-
-func (c *clientStreamReader) handleEndOfStream(frameHeader []byte) ([]byte, error) {
-	messageLength := binary.BigEndian.Uint32(frameHeader[1:5])
-	if messageLength == 0 {
-		return nil, io.EOF
-	}
-
-	// Read the end message (might contain error)
-	endData := make([]byte, messageLength)
-	if _, err := io.ReadFull(c.r.Body, endData); err != nil {
-		return nil, NewError(CodeInternal, "failed to read Connect end message")
-	}
-
-	// Check if it contains an error
-	var endMsg map[string]any
-	if err := json.Unmarshal(endData, &endMsg); err == nil {
-		if errData, ok := endMsg["error"].(map[string]any); ok {
-			code := CodeInternal
-			if codeStr, ok := errData["code"].(string); ok {
-				code = Code(codeStr)
-			}
-			message := "stream error"
-			if msgStr, ok := errData["message"].(string); ok {
-				message = msgStr
-			}
-			return nil, NewError(code, message)
-		}
-	}
-	return nil, io.EOF
-}
-
-func (c *clientStreamReader) handleRegularMessage(frameHeader []byte) ([]byte, error) {
-	const compressionFlagMask = 0x01
-	compressionFlag := frameHeader[0]&compressionFlagMask != 0
-	messageLength := binary.BigEndian.Uint32(frameHeader[1:5])
-
-	// Check message size before allocating
-	if int(messageLength) > c.ctx.options.MaxReceiveMessageSize {
-		return nil, NewError(CodeResourceExhausted,
-			fmt.Sprintf("Connect message size %d exceeds maximum allowed size %d",
-				messageLength, c.ctx.options.MaxReceiveMessageSize))
-	}
-
-	// Read message body
-	data := make([]byte, messageLength)
-	if _, err := io.ReadFull(c.r.Body, data); err != nil {
-		return nil, NewError(CodeInternal, fmt.Sprintf("failed to read Connect message body: %v", err))
-	}
-
-	// Decompress if needed
-	if compressionFlag && c.hasCompression {
-		return c.decompressMessage(data)
-	}
-
-	return data, nil
-}
-
-func (c *clientStreamReader) decompressMessage(data []byte) ([]byte, error) {
-	decompressed, err := c.decompressor.Decompress(data)
-	if err != nil {
-		return nil, NewError(CodeInternal, fmt.Sprintf("failed to decompress Connect message: %v", err))
-	}
-	// Check decompressed size
-	if len(decompressed) > c.ctx.options.MaxReceiveMessageSize {
-		return nil, NewError(CodeResourceExhausted,
-			fmt.Sprintf("decompressed Connect message size %d exceeds maximum allowed size %d",
-				len(decompressed), c.ctx.options.MaxReceiveMessageSize))
-	}
-	return decompressed, nil
-}
-
-// recvPlainMessage reads a plain HTTP message (single message only)
-func (c *clientStreamReader) recvPlainMessage() ([]byte, error) {
-	// For plain HTTP, we only support single message (unary-like)
-	// True streaming requires WebSocket or SSE
-	if c.messageCount > 0 {
-		return nil, io.EOF
-	}
-
-	// Read entire body
-	limitedReader := io.LimitReader(c.r.Body, int64(c.ctx.options.MaxReceiveMessageSize)+1)
-	data, err := io.ReadAll(limitedReader)
-	if err != nil {
-		return nil, NewError(CodeInternal, fmt.Sprintf("failed to read request body: %v", err))
-	}
-
-	// Check if we exceeded the size limit
-	if len(data) > c.ctx.options.MaxReceiveMessageSize {
-		return nil, NewError(CodeResourceExhausted,
-			fmt.Sprintf("message size %d exceeds maximum allowed size %d",
-				len(data), c.ctx.options.MaxReceiveMessageSize))
-	}
-
-	// Decompress if needed
-	if c.hasCompression {
-		decompressed, err := c.decompressor.Decompress(data)
-		if err != nil {
-			return nil, NewError(CodeInternal, fmt.Sprintf("failed to decompress message: %v", err))
-		}
-		return decompressed, nil
-	}
-
-	return data, nil
+	return nil
 }
 
 // Close closes the stream reader
@@ -422,25 +332,30 @@ func (c *clientStreamReader) Close() error {
 	}
 
 	c.closed = true
-	// Drain any remaining data to allow connection reuse
-	_, _ = io.Copy(io.Discard, c.r.Body)
 	return c.r.Body.Close()
 }
 
-// Implement typed client stream
+// typedClientStream implements ClientStream[T]
 type typedClientStream[T any] struct {
 	reader *clientStreamReader
 }
 
+// Recv receives a typed message
 func (c *typedClientStream[T]) Recv() (*T, error) {
 	msg, err := c.reader.Recv()
 	if err != nil {
 		return nil, err
 	}
-	// Type assertion should be safe since we control the decode function
-	return msg.(*T), nil
+
+	typed, ok := msg.(*T)
+	if !ok {
+		return nil, fmt.Errorf("unexpected type: got %T, want %T", msg, new(T))
+	}
+
+	return typed, nil
 }
 
+// Context returns the stream context
 func (c *typedClientStream[T]) Context() context.Context {
 	return c.reader.Context()
 }

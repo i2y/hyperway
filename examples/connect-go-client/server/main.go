@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -51,6 +52,32 @@ type ListUsersResponse struct {
 	NextPageToken string  `json:"next_page_token"`
 }
 
+// Streaming request/response types
+type StreamUsersRequest struct {
+	BatchSize int32 `json:"batch_size"`
+	DelayMs   int32 `json:"delay_ms"`
+}
+
+type BatchUserRequest struct {
+	Name  string `json:"name"`
+	Email string `json:"email"`
+}
+
+type BatchCreateResponse struct {
+	CreatedUsers []*User `json:"created_users"`
+	TotalCreated int32   `json:"total_created"`
+}
+
+type ChatRequest struct {
+	UserID  string `json:"user_id"`
+	Message string `json:"message"`
+}
+
+type ChatResponse struct {
+	ServerMessage string    `json:"server_message"`
+	Timestamp     time.Time `json:"timestamp"`
+}
+
 // UserService implementation
 type UserService struct {
 	users map[string]*User
@@ -72,7 +99,6 @@ func (s *UserService) CreateUser(ctx context.Context, req *CreateUserRequest) (*
 
 	s.users[user.ID] = user
 
-	log.Printf("Created user: %s", user.ID)
 	return &CreateUserResponse{User: user}, nil
 }
 
@@ -106,6 +132,96 @@ func (s *UserService) ListUsers(ctx context.Context, req *ListUsersRequest) (*Li
 	}, nil
 }
 
+// StreamUsers implements server streaming - streams all users
+func (s *UserService) StreamUsers(ctx context.Context, req *StreamUsersRequest, stream rpc.ServerStream[User]) error {
+
+	// Get all users
+	var users []*User
+	for _, user := range s.users {
+		users = append(users, user)
+	}
+
+	// Default batch size
+	batchSize := req.BatchSize
+	if batchSize <= 0 {
+		batchSize = 1
+	}
+
+	// Stream users in batches
+	for i := 0; i < len(users); i++ {
+		if err := stream.Send(users[i]); err != nil {
+			return err
+		}
+
+		// Add delay if requested
+		if req.DelayMs > 0 && i < len(users)-1 {
+			time.Sleep(time.Duration(req.DelayMs) * time.Millisecond)
+		}
+	}
+
+	return nil
+}
+
+// BatchCreateUsers implements client streaming - batch create users
+func (s *UserService) BatchCreateUsers(ctx context.Context, stream rpc.ClientStream[BatchUserRequest]) (*BatchCreateResponse, error) {
+
+	var createdUsers []*User
+	var count int32
+
+	for {
+		req, err := stream.Recv()
+		if err == io.EOF {
+			// Client finished sending
+			break
+		}
+		if err != nil {
+			return nil, err
+		}
+
+		// Create user
+		user := &User{
+			ID:        fmt.Sprintf("batch-user-%d-%d", time.Now().UnixNano(), count),
+			Name:      req.Name,
+			Email:     req.Email,
+			CreatedAt: time.Now(),
+		}
+		s.users[user.ID] = user
+		createdUsers = append(createdUsers, user)
+		count++
+
+	}
+
+	return &BatchCreateResponse{
+		CreatedUsers: createdUsers,
+		TotalCreated: count,
+	}, nil
+}
+
+// UserChat implements bidirectional streaming - chat
+func (s *UserService) UserChat(ctx context.Context, stream rpc.BidiStream[ChatRequest, ChatResponse]) error {
+
+	for {
+		req, err := stream.Recv()
+		if err == io.EOF {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+
+
+		// Echo back with server response
+		resp := &ChatResponse{
+			ServerMessage: fmt.Sprintf("Server received from %s: %s", req.UserID, req.Message),
+			Timestamp:     time.Now(),
+		}
+
+		if err := stream.Send(resp); err != nil {
+			return err
+		}
+	}
+}
+
 func main() {
 	// Create service
 	userService := NewUserService()
@@ -119,6 +235,11 @@ func main() {
 	rpc.MustRegister(svc, "CreateUser", userService.CreateUser)
 	rpc.MustRegister(svc, "GetUser", userService.GetUser)
 	rpc.MustRegister(svc, "ListUsers", userService.ListUsers)
+	
+	// Register streaming methods
+	rpc.MustRegisterServerStream(svc, "StreamUsers", userService.StreamUsers)
+	rpc.MustRegisterClientStream(svc, "BatchCreateUsers", userService.BatchCreateUsers)
+	rpc.MustRegisterBidiStream(svc, "UserChat", userService.UserChat)
 
 	// Export proto file if requested
 	if len(os.Args) > 1 && os.Args[1] == "export-proto" {
