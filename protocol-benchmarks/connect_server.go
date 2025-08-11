@@ -71,6 +71,56 @@ func (s *GreeterService) StreamNumbers(
 	return nil
 }
 
+func (s *GreeterService) SumNumbers(
+	ctx context.Context,
+	stream *connect.ClientStream[grpcwebv1.SumRequest],
+) (*connect.Response[grpcwebv1.SumResponse], error) {
+	var total int32
+	var count int32
+
+	for {
+		if !stream.Receive() {
+			break
+		}
+
+		req := stream.Msg()
+		total += req.Number
+		count++
+	}
+
+	if err := stream.Err(); err != nil {
+		return nil, err
+	}
+
+	return connect.NewResponse(&grpcwebv1.SumResponse{
+		Total: total,
+		Count: count,
+	}), nil
+}
+
+func (s *GreeterService) EchoStream(
+	ctx context.Context,
+	stream *connect.BidiStream[grpcwebv1.EchoRequest, grpcwebv1.EchoResponse],
+) error {
+	for {
+		req, err := stream.Receive()
+		if err != nil {
+			// Client closed stream
+			return nil
+		}
+
+		resp := &grpcwebv1.EchoResponse{
+			Message:   req.Message,
+			Index:     req.Index,
+			Timestamp: timestamppb.Now(),
+		}
+
+		if err := stream.Send(resp); err != nil {
+			return err
+		}
+	}
+}
+
 func main() {
 	greeter := &GreeterService{}
 

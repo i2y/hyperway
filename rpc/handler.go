@@ -140,16 +140,6 @@ var (
 			return &handlerContext{}
 		},
 	}
-
-	// Pool for streaming frame buffers
-	streamFramePool = sync.Pool{
-		New: func() any {
-			// Start with 4KB buffer, can grow as needed
-			const defaultBufferSize = 4096
-			b := make([]byte, 0, defaultBufferSize)
-			return &b
-		},
-	}
 )
 
 // handlerContext holds the context for a handler.

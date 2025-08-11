@@ -41,6 +41,12 @@ const (
 	// GreeterServiceStreamNumbersProcedure is the fully-qualified name of the GreeterService's
 	// StreamNumbers RPC.
 	GreeterServiceStreamNumbersProcedure = "/grpcweb.example.v1.GreeterService/StreamNumbers"
+	// GreeterServiceSumNumbersProcedure is the fully-qualified name of the GreeterService's SumNumbers
+	// RPC.
+	GreeterServiceSumNumbersProcedure = "/grpcweb.example.v1.GreeterService/SumNumbers"
+	// GreeterServiceEchoStreamProcedure is the fully-qualified name of the GreeterService's EchoStream
+	// RPC.
+	GreeterServiceEchoStreamProcedure = "/grpcweb.example.v1.GreeterService/EchoStream"
 )
 
 // GreeterServiceClient is a client for the grpcweb.example.v1.GreeterService service.
@@ -48,6 +54,8 @@ type GreeterServiceClient interface {
 	Greet(context.Context, *connect.Request[gen.GreetRequest]) (*connect.Response[gen.GreetResponse], error)
 	Calculate(context.Context, *connect.Request[gen.CalculateRequest]) (*connect.Response[gen.CalculateResponse], error)
 	StreamNumbers(context.Context, *connect.Request[gen.StreamRequest]) (*connect.ServerStreamForClient[gen.NumberResponse], error)
+	SumNumbers(context.Context) *connect.ClientStreamForClient[gen.SumRequest, gen.SumResponse]
+	EchoStream(context.Context) *connect.BidiStreamForClient[gen.EchoRequest, gen.EchoResponse]
 }
 
 // NewGreeterServiceClient constructs a client for the grpcweb.example.v1.GreeterService service. By
@@ -79,6 +87,18 @@ func NewGreeterServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 			connect.WithSchema(greeterServiceMethods.ByName("StreamNumbers")),
 			connect.WithClientOptions(opts...),
 		),
+		sumNumbers: connect.NewClient[gen.SumRequest, gen.SumResponse](
+			httpClient,
+			baseURL+GreeterServiceSumNumbersProcedure,
+			connect.WithSchema(greeterServiceMethods.ByName("SumNumbers")),
+			connect.WithClientOptions(opts...),
+		),
+		echoStream: connect.NewClient[gen.EchoRequest, gen.EchoResponse](
+			httpClient,
+			baseURL+GreeterServiceEchoStreamProcedure,
+			connect.WithSchema(greeterServiceMethods.ByName("EchoStream")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -87,6 +107,8 @@ type greeterServiceClient struct {
 	greet         *connect.Client[gen.GreetRequest, gen.GreetResponse]
 	calculate     *connect.Client[gen.CalculateRequest, gen.CalculateResponse]
 	streamNumbers *connect.Client[gen.StreamRequest, gen.NumberResponse]
+	sumNumbers    *connect.Client[gen.SumRequest, gen.SumResponse]
+	echoStream    *connect.Client[gen.EchoRequest, gen.EchoResponse]
 }
 
 // Greet calls grpcweb.example.v1.GreeterService.Greet.
@@ -104,11 +126,23 @@ func (c *greeterServiceClient) StreamNumbers(ctx context.Context, req *connect.R
 	return c.streamNumbers.CallServerStream(ctx, req)
 }
 
+// SumNumbers calls grpcweb.example.v1.GreeterService.SumNumbers.
+func (c *greeterServiceClient) SumNumbers(ctx context.Context) *connect.ClientStreamForClient[gen.SumRequest, gen.SumResponse] {
+	return c.sumNumbers.CallClientStream(ctx)
+}
+
+// EchoStream calls grpcweb.example.v1.GreeterService.EchoStream.
+func (c *greeterServiceClient) EchoStream(ctx context.Context) *connect.BidiStreamForClient[gen.EchoRequest, gen.EchoResponse] {
+	return c.echoStream.CallBidiStream(ctx)
+}
+
 // GreeterServiceHandler is an implementation of the grpcweb.example.v1.GreeterService service.
 type GreeterServiceHandler interface {
 	Greet(context.Context, *connect.Request[gen.GreetRequest]) (*connect.Response[gen.GreetResponse], error)
 	Calculate(context.Context, *connect.Request[gen.CalculateRequest]) (*connect.Response[gen.CalculateResponse], error)
 	StreamNumbers(context.Context, *connect.Request[gen.StreamRequest], *connect.ServerStream[gen.NumberResponse]) error
+	SumNumbers(context.Context, *connect.ClientStream[gen.SumRequest]) (*connect.Response[gen.SumResponse], error)
+	EchoStream(context.Context, *connect.BidiStream[gen.EchoRequest, gen.EchoResponse]) error
 }
 
 // NewGreeterServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -136,6 +170,18 @@ func NewGreeterServiceHandler(svc GreeterServiceHandler, opts ...connect.Handler
 		connect.WithSchema(greeterServiceMethods.ByName("StreamNumbers")),
 		connect.WithHandlerOptions(opts...),
 	)
+	greeterServiceSumNumbersHandler := connect.NewClientStreamHandler(
+		GreeterServiceSumNumbersProcedure,
+		svc.SumNumbers,
+		connect.WithSchema(greeterServiceMethods.ByName("SumNumbers")),
+		connect.WithHandlerOptions(opts...),
+	)
+	greeterServiceEchoStreamHandler := connect.NewBidiStreamHandler(
+		GreeterServiceEchoStreamProcedure,
+		svc.EchoStream,
+		connect.WithSchema(greeterServiceMethods.ByName("EchoStream")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/grpcweb.example.v1.GreeterService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case GreeterServiceGreetProcedure:
@@ -144,6 +190,10 @@ func NewGreeterServiceHandler(svc GreeterServiceHandler, opts ...connect.Handler
 			greeterServiceCalculateHandler.ServeHTTP(w, r)
 		case GreeterServiceStreamNumbersProcedure:
 			greeterServiceStreamNumbersHandler.ServeHTTP(w, r)
+		case GreeterServiceSumNumbersProcedure:
+			greeterServiceSumNumbersHandler.ServeHTTP(w, r)
+		case GreeterServiceEchoStreamProcedure:
+			greeterServiceEchoStreamHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -163,4 +213,12 @@ func (UnimplementedGreeterServiceHandler) Calculate(context.Context, *connect.Re
 
 func (UnimplementedGreeterServiceHandler) StreamNumbers(context.Context, *connect.Request[gen.StreamRequest], *connect.ServerStream[gen.NumberResponse]) error {
 	return connect.NewError(connect.CodeUnimplemented, errors.New("grpcweb.example.v1.GreeterService.StreamNumbers is not implemented"))
+}
+
+func (UnimplementedGreeterServiceHandler) SumNumbers(context.Context, *connect.ClientStream[gen.SumRequest]) (*connect.Response[gen.SumResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("grpcweb.example.v1.GreeterService.SumNumbers is not implemented"))
+}
+
+func (UnimplementedGreeterServiceHandler) EchoStream(context.Context, *connect.BidiStream[gen.EchoRequest, gen.EchoResponse]) error {
+	return connect.NewError(connect.CodeUnimplemented, errors.New("grpcweb.example.v1.GreeterService.EchoStream is not implemented"))
 }
