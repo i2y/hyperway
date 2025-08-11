@@ -50,6 +50,26 @@ func CreateHyperwayServer() (http.Handler, error) {
 		return nil, fmt.Errorf("failed to register ServerStreamLarge: %w", err)
 	}
 
+	// Register client streaming method
+	if err := rpc.RegisterClientStream[ClientStreamRequest, ClientStreamResponse](svc, "ClientStream",
+		func(ctx context.Context, stream rpc.ClientStream[ClientStreamRequest]) (*ClientStreamResponse, error) {
+			// Wrap the stream to match the interface
+			wrapper := &clientStreamWrapper{stream: stream}
+			return ClientStream(ctx, wrapper)
+		}); err != nil {
+		return nil, fmt.Errorf("failed to register ClientStream: %w", err)
+	}
+
+	// Register bidirectional streaming method
+	if err := rpc.RegisterBidiStream[BidiStreamRequest, BidiStreamResponse](svc, "BidiStream",
+		func(ctx context.Context, stream rpc.BidiStream[BidiStreamRequest, BidiStreamResponse]) error {
+			// Wrap the stream to match the interface
+			wrapper := &bidiStreamWrapper{stream: stream}
+			return BidiStream(ctx, wrapper)
+		}); err != nil {
+		return nil, fmt.Errorf("failed to register BidiStream: %w", err)
+	}
+
 	// Create handler that supports all protocols
 	handler, err := rpc.NewHandler(svc)
 	if err != nil {
@@ -57,6 +77,36 @@ func CreateHyperwayServer() (http.Handler, error) {
 	}
 
 	return handler, nil
+}
+
+// clientStreamWrapper wraps rpc.ClientStream to match ClientStreamInterface
+type clientStreamWrapper struct {
+	stream rpc.ClientStream[ClientStreamRequest]
+}
+
+func (w *clientStreamWrapper) Recv() (*ClientStreamRequest, error) {
+	return w.stream.Recv()
+}
+
+func (w *clientStreamWrapper) Context() context.Context {
+	return w.stream.Context()
+}
+
+// bidiStreamWrapper wraps rpc.BidiStream to match BidiStreamInterface
+type bidiStreamWrapper struct {
+	stream rpc.BidiStream[BidiStreamRequest, BidiStreamResponse]
+}
+
+func (w *bidiStreamWrapper) Send(resp *BidiStreamResponse) error {
+	return w.stream.Send(resp)
+}
+
+func (w *bidiStreamWrapper) Recv() (*BidiStreamRequest, error) {
+	return w.stream.Recv()
+}
+
+func (w *bidiStreamWrapper) Context() context.Context {
+	return w.stream.Context()
 }
 
 // ExportProtoFiles exports the proto files for the compatibility service

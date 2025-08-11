@@ -6,6 +6,40 @@ option go_package = "github.com/i2y/hyperway/examples/connect-go-client/gen;user
 
 import "google/protobuf/timestamp.proto";
 
+message ListUsersRequest {
+  int32 page_size = 1;
+
+  string page_token = 2;
+}
+
+message ChatRequest {
+  string user_id = 1;
+
+  string message = 2;
+}
+
+message CreateUserResponse {
+  optional User user = 1;
+}
+
+message BatchUserRequest {
+  string name = 1;
+
+  string email = 2;
+}
+
+message CreateUserRequest {
+  string name = 1;
+
+  string email = 2;
+}
+
+message ChatResponse {
+  string server_message = 1;
+
+  google.protobuf.Timestamp timestamp = 2;
+}
+
 message User {
   string id = 1;
 
@@ -16,18 +50,10 @@ message User {
   google.protobuf.Timestamp created_at = 4;
 }
 
-message GetUserResponse {
-  optional User user = 1;
-}
+message BatchCreateResponse {
+  repeated User created_users = 1;
 
-message GetUserRequest {
-  string id = 1;
-}
-
-message ListUsersRequest {
-  int32 page_size = 1;
-
-  string page_token = 2;
+  int32 total_created = 2;
 }
 
 message ListUsersResponse {
@@ -36,20 +62,30 @@ message ListUsersResponse {
   string next_page_token = 2;
 }
 
-message CreateUserRequest {
-  string name = 1;
-
-  string email = 2;
+message GetUserRequest {
+  string id = 1;
 }
 
-message CreateUserResponse {
+message StreamUsersRequest {
+  int32 batch_size = 1;
+
+  int32 delay_ms = 2;
+}
+
+message GetUserResponse {
   optional User user = 1;
 }
 
 service UserService {
-  rpc ListUsers ( ListUsersRequest ) returns ( ListUsersResponse );
+  rpc UserChat ( stream ChatRequest ) returns ( stream ChatResponse );
 
   rpc CreateUser ( CreateUserRequest ) returns ( CreateUserResponse );
 
   rpc GetUser ( GetUserRequest ) returns ( GetUserResponse );
+
+  rpc ListUsers ( ListUsersRequest ) returns ( ListUsersResponse );
+
+  rpc StreamUsers ( StreamUsersRequest ) returns ( stream User );
+
+  rpc BatchCreateUsers ( stream BatchUserRequest ) returns ( BatchCreateResponse );
 }

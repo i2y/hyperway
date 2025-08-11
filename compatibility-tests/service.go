@@ -5,6 +5,7 @@ package compatibility
 import (
 	"context"
 	"fmt"
+	"io"
 	"strings"
 	"time"
 
@@ -104,6 +105,30 @@ type StreamResponse struct {
 	Message string `json:"message"`
 }
 
+// ClientStreamRequest for client streaming tests
+type ClientStreamRequest struct {
+	Value int32 `json:"value"`
+}
+
+// ClientStreamResponse for client streaming tests
+type ClientStreamResponse struct {
+	Total int32 `json:"total"`
+	Count int32 `json:"count"`
+}
+
+// BidiStreamRequest for bidirectional streaming tests
+type BidiStreamRequest struct {
+	Message string `json:"message"`
+	Index   int32  `json:"index"`
+}
+
+// BidiStreamResponse for bidirectional streaming tests
+type BidiStreamResponse struct {
+	Echo      string `json:"echo"`
+	Index     int32  `json:"index"`
+	Timestamp int64  `json:"timestamp"`
+}
+
 // ErrorRequest for error handling tests
 type ErrorRequest struct {
 	ErrorCode string `json:"error_code"`
@@ -191,6 +216,68 @@ func ServerStreamLarge(ctx context.Context, req *StreamRequest, stream ServerStr
 		time.Sleep(10 * time.Millisecond)
 	}
 	return nil
+}
+
+// ClientStreamInterface defines the interface for client streaming
+type ClientStreamInterface interface {
+	Recv() (*ClientStreamRequest, error)
+	Context() context.Context
+}
+
+// ClientStream receives multiple values from client and returns sum
+func ClientStream(ctx context.Context, stream ClientStreamInterface) (*ClientStreamResponse, error) {
+	var total int32
+	var count int32
+
+	for {
+		req, err := stream.Recv()
+		if err != nil {
+			// Check if it's EOF (end of stream)
+			if err == io.EOF {
+				break
+			}
+			return nil, err
+		}
+		total += req.Value
+		count++
+	}
+
+	return &ClientStreamResponse{
+		Total: total,
+		Count: count,
+	}, nil
+}
+
+// BidiStreamInterface defines the interface for bidirectional streaming
+type BidiStreamInterface interface {
+	Send(*BidiStreamResponse) error
+	Recv() (*BidiStreamRequest, error)
+	Context() context.Context
+}
+
+// BidiStream handles bidirectional streaming
+func BidiStream(ctx context.Context, stream BidiStreamInterface) error {
+	for {
+		req, err := stream.Recv()
+		if err != nil {
+			// Check if it's EOF (end of stream)
+			if err == io.EOF {
+				return nil
+			}
+			return err
+		}
+
+		// Echo back with timestamp
+		resp := &BidiStreamResponse{
+			Echo:      fmt.Sprintf("Echo: %s", req.Message),
+			Index:     req.Index,
+			Timestamp: time.Now().Unix(),
+		}
+
+		if err := stream.Send(resp); err != nil {
+			return err
+		}
+	}
 }
 
 // TestError returns various error codes for testing

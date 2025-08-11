@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"time"
@@ -42,6 +43,24 @@ type TimeRequest struct {
 type TimeResponse struct {
 	CurrentTime time.Time `json:"current_time"`
 	Message     string    `json:"message"`
+}
+
+// Client streaming types
+type NumberRequest struct {
+	Value int `json:"value"`
+}
+
+type SumResponse struct {
+	Total int     `json:"total"`
+	Count int     `json:"count"`
+	Avg   float64 `json:"average"`
+}
+
+// Bidirectional streaming types
+type ChatMessage struct {
+	User    string    `json:"user"`
+	Message string    `json:"message"`
+	Time    time.Time `json:"time"`
 }
 
 // Service handlers
@@ -109,6 +128,82 @@ func handleTime(ctx context.Context, req *TimeRequest, stream rpc.ServerStream[T
 	return nil
 }
 
+// Client streaming handler - receives multiple numbers and returns sum/average
+func handleSum(ctx context.Context, stream rpc.ClientStream[NumberRequest]) (*SumResponse, error) {
+	log.Println("Sum request started")
+
+	var total int
+	var count int
+
+	for {
+		req, err := stream.Recv()
+		if err == io.EOF {
+			// Client finished sending
+			break
+		}
+		if err != nil {
+			return nil, err
+		}
+
+		total += req.Value
+		count++
+		log.Printf("Received value: %d, running total: %d", req.Value, total)
+	}
+
+	var avg float64
+	if count > 0 {
+		avg = float64(total) / float64(count)
+	}
+
+	return &SumResponse{
+		Total: total,
+		Count: count,
+		Avg:   avg,
+	}, nil
+}
+
+// Bidirectional streaming handler - chat echo service
+func handleChat(ctx context.Context, stream rpc.BidiStream[ChatMessage, ChatMessage]) error {
+	log.Println("Chat session started")
+
+	// Echo messages back with server response
+	for {
+		msg, err := stream.Recv()
+		if err == io.EOF {
+			// Client closed the stream
+			log.Println("Chat session ended")
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+
+		log.Printf("Chat from %s: %s", msg.User, msg.Message)
+
+		// Send echo response
+		response := &ChatMessage{
+			User:    "Server",
+			Message: fmt.Sprintf("Echo: %s", msg.Message),
+			Time:    time.Now(),
+		}
+
+		if err := stream.Send(response); err != nil {
+			return err
+		}
+
+		// Send additional info message
+		info := &ChatMessage{
+			User:    "Server",
+			Message: fmt.Sprintf("Received %d chars from %s", len(msg.Message), msg.User),
+			Time:    time.Now(),
+		}
+
+		if err := stream.Send(info); err != nil {
+			return err
+		}
+	}
+}
+
 func main() {
 	// Create service
 	svc := rpc.NewService("StreamingExample",
@@ -118,6 +213,12 @@ func main() {
 	// Register server-streaming methods using type-safe registration
 	rpc.MustRegisterServerStream(svc, "Count", handleCount)
 	rpc.MustRegisterServerStream(svc, "Time", handleTime)
+
+	// Register client-streaming method
+	rpc.MustRegisterClientStream(svc, "Sum", handleSum)
+
+	// Register bidirectional streaming method
+	rpc.MustRegisterBidiStream(svc, "Chat", handleChat)
 
 	// Create handler
 	handler, err := rpc.NewHandler(svc)
@@ -139,9 +240,16 @@ func main() {
 	log.Println("Test page: http://localhost:8080/test")
 	log.Println("")
 	log.Println("Example requests:")
+	log.Println("Server streaming:")
 	log.Println("  Count (Connect): curl -X POST http://localhost:8080/examples.streaming.v1.StreamingExample/Count -H 'Content-Type: application/json' -d '{\"up_to\": 5}'")
 	log.Println("  Time (Connect):  curl -X POST http://localhost:8080/examples.streaming.v1.StreamingExample/Time -H 'Content-Type: application/json' -d '{\"interval_seconds\": 1, \"count\": 3}'")
 	log.Println("  Count (gRPC):    grpcurl -plaintext -d '{\"up_to\": 5}' localhost:8080 examples.streaming.v1.StreamingExample/Count")
+	log.Println("")
+	log.Println("Client streaming:")
+	log.Println("  Sum (gRPC):      echo '{\"value\": 1}' '{\"value\": 2}' '{\"value\": 3}' | grpcurl -plaintext -d @ localhost:8080 examples.streaming.v1.StreamingExample/Sum")
+	log.Println("")
+	log.Println("Bidirectional streaming:")
+	log.Println("  Chat (gRPC):     echo '{\"user\": \"Alice\", \"message\": \"Hello\"}' '{\"user\": \"Alice\", \"message\": \"How are you?\"}' | grpcurl -plaintext -d @ localhost:8080 examples.streaming.v1.StreamingExample/Chat")
 
 	// Use h2c (HTTP/2 without TLS) for gRPC support
 	h2s := &http2.Server{}

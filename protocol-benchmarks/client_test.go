@@ -504,3 +504,635 @@ func BenchmarkHyperwayGRPCStreaming(b *testing.B) {
 		}
 	})
 }
+
+// BenchmarkHyperwayClientStreaming benchmarks Hyperway client streaming with gRPC protocol
+func BenchmarkHyperwayClientStreaming(b *testing.B) {
+	httpClient := &http.Client{
+		Transport: &http2.Transport{
+			AllowHTTP: true,
+			DialTLS: func(network, addr string, cfg *tls.Config) (net.Conn, error) {
+				return net.Dial(network, addr)
+			},
+		},
+	}
+
+	client := genconnect.NewGreeterServiceClient(
+		httpClient,
+		"http://localhost:8080",
+		connect.WithGRPC(),
+	)
+
+	ctx := context.Background()
+
+	b.ResetTimer()
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			stream := client.SumNumbers(ctx)
+
+			// Send 100 numbers
+			for i := int32(1); i <= 100; i++ {
+				err := stream.Send(&grpcwebv1.SumRequest{Number: i})
+				if err != nil {
+					b.Fatal(err)
+				}
+			}
+
+			// Close send and get response
+			resp, err := stream.CloseAndReceive()
+			if err != nil {
+				b.Fatal(err)
+			}
+
+			// Verify result (1+2+...+100 = 5050)
+			if resp.Msg.Total != 5050 {
+				b.Fatalf("expected total 5050, got %d", resp.Msg.Total)
+			}
+			if resp.Msg.Count != 100 {
+				b.Fatalf("expected count 100, got %d", resp.Msg.Count)
+			}
+		}
+	})
+}
+
+// BenchmarkConnectGoClientStreaming benchmarks Connect-go client streaming with gRPC protocol
+func BenchmarkConnectGoClientStreaming(b *testing.B) {
+	httpClient := &http.Client{
+		Transport: &http2.Transport{
+			AllowHTTP: true,
+			DialTLS: func(network, addr string, cfg *tls.Config) (net.Conn, error) {
+				return net.Dial(network, addr)
+			},
+		},
+	}
+
+	client := genconnect.NewGreeterServiceClient(
+		httpClient,
+		"http://localhost:8084",
+		connect.WithGRPC(),
+	)
+
+	ctx := context.Background()
+
+	b.ResetTimer()
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			stream := client.SumNumbers(ctx)
+
+			// Send 100 numbers
+			for i := int32(1); i <= 100; i++ {
+				err := stream.Send(&grpcwebv1.SumRequest{Number: i})
+				if err != nil {
+					b.Fatal(err)
+				}
+			}
+
+			// Close send and get response
+			resp, err := stream.CloseAndReceive()
+			if err != nil {
+				b.Fatal(err)
+			}
+
+			// Verify result
+			if resp.Msg.Total != 5050 {
+				b.Fatalf("expected total 5050, got %d", resp.Msg.Total)
+			}
+			if resp.Msg.Count != 100 {
+				b.Fatalf("expected count 100, got %d", resp.Msg.Count)
+			}
+		}
+	})
+}
+
+// BenchmarkHyperwayBidiStreaming benchmarks Hyperway bidirectional streaming with gRPC protocol
+func BenchmarkHyperwayBidiStreaming(b *testing.B) {
+	httpClient := &http.Client{
+		Transport: &http2.Transport{
+			AllowHTTP: true,
+			DialTLS: func(network, addr string, cfg *tls.Config) (net.Conn, error) {
+				return net.Dial(network, addr)
+			},
+		},
+	}
+
+	client := genconnect.NewGreeterServiceClient(
+		httpClient,
+		"http://localhost:8080",
+		connect.WithGRPC(),
+	)
+
+	ctx := context.Background()
+
+	b.ResetTimer()
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			stream := client.EchoStream(ctx)
+
+			// Send and receive 50 messages
+			for i := int32(0); i < 50; i++ {
+				// Send
+				err := stream.Send(&grpcwebv1.EchoRequest{
+					Message: "Hello",
+					Index:   i,
+				})
+				if err != nil {
+					b.Fatal(err)
+				}
+
+				// Receive
+				resp, err := stream.Receive()
+				if err != nil {
+					b.Fatal(err)
+				}
+
+				if resp.Index != i {
+					b.Fatalf("expected index %d, got %d", i, resp.Index)
+				}
+			}
+
+			// Close stream
+			if err := stream.CloseRequest(); err != nil {
+				b.Fatal(err)
+			}
+			if err := stream.CloseResponse(); err != nil && err != io.EOF {
+				b.Fatal(err)
+			}
+		}
+	})
+}
+
+// BenchmarkConnectGoBidiStreaming benchmarks Connect-go bidirectional streaming with gRPC protocol
+func BenchmarkConnectGoBidiStreaming(b *testing.B) {
+	httpClient := &http.Client{
+		Transport: &http2.Transport{
+			AllowHTTP: true,
+			DialTLS: func(network, addr string, cfg *tls.Config) (net.Conn, error) {
+				return net.Dial(network, addr)
+			},
+		},
+	}
+
+	client := genconnect.NewGreeterServiceClient(
+		httpClient,
+		"http://localhost:8084",
+		connect.WithGRPC(),
+	)
+
+	ctx := context.Background()
+
+	b.ResetTimer()
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			stream := client.EchoStream(ctx)
+
+			// Send and receive 50 messages
+			for i := int32(0); i < 50; i++ {
+				// Send
+				err := stream.Send(&grpcwebv1.EchoRequest{
+					Message: "Hello",
+					Index:   i,
+				})
+				if err != nil {
+					b.Fatal(err)
+				}
+
+				// Receive
+				resp, err := stream.Receive()
+				if err != nil {
+					b.Fatal(err)
+				}
+
+				if resp.Index != i {
+					b.Fatalf("expected index %d, got %d", i, resp.Index)
+				}
+			}
+
+			// Close stream
+			if err := stream.CloseRequest(); err != nil {
+				b.Fatal(err)
+			}
+			if err := stream.CloseResponse(); err != nil && err != io.EOF {
+				b.Fatal(err)
+			}
+		}
+	})
+}
+
+// BenchmarkHyperwayConnectBidiStreaming benchmarks Hyperway bidirectional streaming with Connect protocol
+// SKIP: HTTP/1.1 doesn't support bidirectional streaming properly
+/*
+func BenchmarkHyperwayConnectBidiStreaming(b *testing.B) {
+	httpClient := &http.Client{
+		Transport: &http.Transport{
+			MaxIdleConns:        100,
+			MaxIdleConnsPerHost: 100,
+		},
+	}
+
+	client := genconnect.NewGreeterServiceClient(
+		httpClient,
+		"http://localhost:8080",
+		// No WithGRPC() - uses Connect protocol
+	)
+
+	b.ResetTimer()
+	// Run serially to avoid issues with HTTP/1.1 connection multiplexing
+	for i := 0; i < b.N; i++ {
+		ctx := context.Background()
+		stream := client.EchoStream(ctx)
+
+		// Send and receive 50 messages
+		for j := int32(0); j < 50; j++ {
+			// Send
+			err := stream.Send(&grpcwebv1.EchoRequest{
+				Message: "Hello",
+				Index:   j,
+			})
+			if err != nil {
+				b.Fatal(err)
+			}
+
+			// Receive
+			resp, err := stream.Receive()
+			if err != nil {
+				b.Fatal(err)
+			}
+
+			if resp.Index != j {
+				b.Fatalf("expected index %d, got %d", j, resp.Index)
+			}
+		}
+
+		// Close stream
+		if err := stream.CloseRequest(); err != nil {
+			b.Fatal(err)
+		}
+		if err := stream.CloseResponse(); err != nil && err != io.EOF {
+			b.Fatal(err)
+		}
+	}
+}
+*/
+
+// BenchmarkConnectGoConnectBidiStreaming benchmarks Connect-go bidirectional streaming with Connect protocol
+// SKIP: HTTP/1.1 doesn't support bidirectional streaming properly
+/*
+func BenchmarkConnectGoConnectBidiStreaming(b *testing.B) {
+	httpClient := &http.Client{
+		Transport: &http.Transport{
+			MaxIdleConns:        100,
+			MaxIdleConnsPerHost: 100,
+		},
+	}
+
+	client := genconnect.NewGreeterServiceClient(
+		httpClient,
+		"http://localhost:8084",
+		// No WithGRPC() - uses Connect protocol
+	)
+
+	ctx := context.Background()
+
+	b.ResetTimer()
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			stream := client.EchoStream(ctx)
+
+			// Send and receive 50 messages
+			for i := int32(0); i < 50; i++ {
+				// Send
+				err := stream.Send(&grpcwebv1.EchoRequest{
+					Message: "Hello",
+					Index:   i,
+				})
+				if err != nil {
+					b.Fatal(err)
+				}
+
+				// Receive
+				resp, err := stream.Receive()
+				if err != nil {
+					b.Fatal(err)
+				}
+
+				if resp.Index != i {
+					b.Fatalf("expected index %d, got %d", i, resp.Index)
+				}
+			}
+
+			// Close stream
+			if err := stream.CloseRequest(); err != nil {
+				b.Fatal(err)
+			}
+			if err := stream.CloseResponse(); err != nil && err != io.EOF {
+				b.Fatal(err)
+			}
+		}
+	})
+}
+*/
+
+// BenchmarkHyperwayConnectBidiStreamingHTTP2 benchmarks Hyperway bidirectional streaming with Connect protocol over HTTP/2
+func BenchmarkHyperwayConnectBidiStreamingHTTP2(b *testing.B) {
+	httpClient := &http.Client{
+		Transport: &http2.Transport{
+			AllowHTTP: true,
+			DialTLS: func(network, addr string, cfg *tls.Config) (net.Conn, error) {
+				return net.Dial(network, addr)
+			},
+		},
+	}
+
+	client := genconnect.NewGreeterServiceClient(
+		httpClient,
+		"http://localhost:8080",
+		// No WithGRPC() - uses Connect protocol
+	)
+
+	ctx := context.Background()
+
+	b.ResetTimer()
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			stream := client.EchoStream(ctx)
+
+			// Send and receive 50 messages
+			for i := int32(0); i < 50; i++ {
+				// Send
+				err := stream.Send(&grpcwebv1.EchoRequest{
+					Message: "Hello",
+					Index:   i,
+				})
+				if err != nil {
+					b.Fatal(err)
+				}
+
+				// Receive
+				resp, err := stream.Receive()
+				if err != nil {
+					b.Fatal(err)
+				}
+
+				if resp.Index != i {
+					b.Fatalf("expected index %d, got %d", i, resp.Index)
+				}
+			}
+
+			// Close stream
+			if err := stream.CloseRequest(); err != nil {
+				b.Fatal(err)
+			}
+			if err := stream.CloseResponse(); err != nil && err != io.EOF {
+				b.Fatal(err)
+			}
+		}
+	})
+}
+
+// BenchmarkConnectGoConnectBidiStreamingHTTP2 benchmarks Connect-go bidirectional streaming with Connect protocol over HTTP/2
+func BenchmarkConnectGoConnectBidiStreamingHTTP2(b *testing.B) {
+	httpClient := &http.Client{
+		Transport: &http2.Transport{
+			AllowHTTP: true,
+			DialTLS: func(network, addr string, cfg *tls.Config) (net.Conn, error) {
+				return net.Dial(network, addr)
+			},
+		},
+	}
+
+	client := genconnect.NewGreeterServiceClient(
+		httpClient,
+		"http://localhost:8084",
+		// No WithGRPC() - uses Connect protocol
+	)
+
+	ctx := context.Background()
+
+	b.ResetTimer()
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			stream := client.EchoStream(ctx)
+
+			// Send and receive 50 messages
+			for i := int32(0); i < 50; i++ {
+				// Send
+				err := stream.Send(&grpcwebv1.EchoRequest{
+					Message: "Hello",
+					Index:   i,
+				})
+				if err != nil {
+					b.Fatal(err)
+				}
+
+				// Receive
+				resp, err := stream.Receive()
+				if err != nil {
+					b.Fatal(err)
+				}
+
+				if resp.Index != i {
+					b.Fatalf("expected index %d, got %d", i, resp.Index)
+				}
+			}
+
+			// Close stream
+			if err := stream.CloseRequest(); err != nil {
+				b.Fatal(err)
+			}
+			if err := stream.CloseResponse(); err != nil && err != io.EOF {
+				b.Fatal(err)
+			}
+		}
+	})
+}
+
+// BenchmarkHyperwayConnectClientStreaming benchmarks Hyperway client streaming with Connect protocol
+func BenchmarkHyperwayConnectClientStreaming(b *testing.B) {
+	httpClient := &http.Client{
+		Transport: &http.Transport{
+			MaxIdleConns:        100,
+			MaxIdleConnsPerHost: 100,
+		},
+	}
+
+	client := genconnect.NewGreeterServiceClient(
+		httpClient,
+		"http://localhost:8080",
+		// No WithGRPC() - uses Connect protocol
+	)
+
+	ctx := context.Background()
+
+	b.ResetTimer()
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			stream := client.SumNumbers(ctx)
+
+			// Send 100 numbers
+			for i := int32(1); i <= 100; i++ {
+				err := stream.Send(&grpcwebv1.SumRequest{Number: i})
+				if err != nil {
+					b.Fatal(err)
+				}
+			}
+
+			// Close send and get response
+			resp, err := stream.CloseAndReceive()
+			if err != nil {
+				b.Fatal(err)
+			}
+
+			// Verify result (1+2+...+100 = 5050)
+			if resp.Msg.Total != 5050 {
+				b.Fatalf("expected total 5050, got %d", resp.Msg.Total)
+			}
+			if resp.Msg.Count != 100 {
+				b.Fatalf("expected count 100, got %d", resp.Msg.Count)
+			}
+		}
+	})
+}
+
+// BenchmarkConnectGoConnectClientStreaming benchmarks Connect-go client streaming with Connect protocol
+func BenchmarkConnectGoConnectClientStreaming(b *testing.B) {
+	httpClient := &http.Client{
+		Transport: &http.Transport{
+			MaxIdleConns:        100,
+			MaxIdleConnsPerHost: 100,
+		},
+	}
+
+	client := genconnect.NewGreeterServiceClient(
+		httpClient,
+		"http://localhost:8084",
+		// No WithGRPC() - uses Connect protocol
+	)
+
+	ctx := context.Background()
+
+	b.ResetTimer()
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			stream := client.SumNumbers(ctx)
+
+			// Send 100 numbers
+			for i := int32(1); i <= 100; i++ {
+				err := stream.Send(&grpcwebv1.SumRequest{Number: i})
+				if err != nil {
+					b.Fatal(err)
+				}
+			}
+
+			// Close send and get response
+			resp, err := stream.CloseAndReceive()
+			if err != nil {
+				b.Fatal(err)
+			}
+
+			// Verify result
+			if resp.Msg.Total != 5050 {
+				b.Fatalf("expected total 5050, got %d", resp.Msg.Total)
+			}
+			if resp.Msg.Count != 100 {
+				b.Fatalf("expected count 100, got %d", resp.Msg.Count)
+			}
+		}
+	})
+}
+
+// BenchmarkHyperwayConnectClientStreamingHTTP2 benchmarks Hyperway client streaming with Connect protocol over HTTP/2
+func BenchmarkHyperwayConnectClientStreamingHTTP2(b *testing.B) {
+	httpClient := &http.Client{
+		Transport: &http2.Transport{
+			AllowHTTP: true,
+			DialTLS: func(network, addr string, cfg *tls.Config) (net.Conn, error) {
+				return net.Dial(network, addr)
+			},
+		},
+	}
+
+	client := genconnect.NewGreeterServiceClient(
+		httpClient,
+		"http://localhost:8080",
+		// No WithGRPC() - uses Connect protocol
+	)
+
+	ctx := context.Background()
+
+	b.ResetTimer()
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			stream := client.SumNumbers(ctx)
+
+			// Send 100 numbers
+			for i := int32(1); i <= 100; i++ {
+				err := stream.Send(&grpcwebv1.SumRequest{Number: i})
+				if err != nil {
+					b.Fatal(err)
+				}
+			}
+
+			// Close send and get response
+			resp, err := stream.CloseAndReceive()
+			if err != nil {
+				b.Fatal(err)
+			}
+
+			// Verify result (1+2+...+100 = 5050)
+			if resp.Msg.Total != 5050 {
+				b.Fatalf("expected total 5050, got %d", resp.Msg.Total)
+			}
+			if resp.Msg.Count != 100 {
+				b.Fatalf("expected count 100, got %d", resp.Msg.Count)
+			}
+		}
+	})
+}
+
+// BenchmarkConnectGoConnectClientStreamingHTTP2 benchmarks Connect-go client streaming with Connect protocol over HTTP/2
+func BenchmarkConnectGoConnectClientStreamingHTTP2(b *testing.B) {
+	httpClient := &http.Client{
+		Transport: &http2.Transport{
+			AllowHTTP: true,
+			DialTLS: func(network, addr string, cfg *tls.Config) (net.Conn, error) {
+				return net.Dial(network, addr)
+			},
+		},
+	}
+
+	client := genconnect.NewGreeterServiceClient(
+		httpClient,
+		"http://localhost:8084",
+		// No WithGRPC() - uses Connect protocol
+	)
+
+	ctx := context.Background()
+
+	b.ResetTimer()
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			stream := client.SumNumbers(ctx)
+
+			// Send 100 numbers
+			for i := int32(1); i <= 100; i++ {
+				err := stream.Send(&grpcwebv1.SumRequest{Number: i})
+				if err != nil {
+					b.Fatal(err)
+				}
+			}
+
+			// Close send and get response
+			resp, err := stream.CloseAndReceive()
+			if err != nil {
+				b.Fatal(err)
+			}
+
+			// Verify result
+			if resp.Msg.Total != 5050 {
+				b.Fatalf("expected total 5050, got %d", resp.Msg.Total)
+			}
+			if resp.Msg.Count != 100 {
+				b.Fatalf("expected count 100, got %d", resp.Msg.Count)
+			}
+		}
+	})
+}

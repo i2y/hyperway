@@ -6,6 +6,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 
@@ -42,6 +43,26 @@ type StreamRequest struct {
 
 type NumberResponse struct {
 	Number    int32                  `json:"number"`
+	Timestamp *timestamppb.Timestamp `json:"timestamp"`
+}
+
+type SumRequest struct {
+	Number int32 `json:"number"`
+}
+
+type SumResponse struct {
+	Total int32 `json:"total"`
+	Count int32 `json:"count"`
+}
+
+type EchoRequest struct {
+	Message string `json:"message"`
+	Index   int32  `json:"index"`
+}
+
+type EchoResponse struct {
+	Message   string                 `json:"message"`
+	Index     int32                  `json:"index"`
 	Timestamp *timestamppb.Timestamp `json:"timestamp"`
 }
 
@@ -100,6 +121,52 @@ func (s *greeterService) StreamNumbers(ctx context.Context, req *StreamRequest, 
 	return nil
 }
 
+func (s *greeterService) SumNumbers(ctx context.Context, stream rpc.ClientStream[SumRequest]) (*SumResponse, error) {
+	var total int32
+	var count int32
+
+	for {
+		req, err := stream.Recv()
+		if err == io.EOF {
+			// End of stream
+			break
+		}
+		if err != nil {
+			return nil, err
+		}
+		total += req.Number
+		count++
+	}
+
+	return &SumResponse{
+		Total: total,
+		Count: count,
+	}, nil
+}
+
+func (s *greeterService) EchoStream(ctx context.Context, stream rpc.BidiStream[EchoRequest, EchoResponse]) error {
+	for {
+		req, err := stream.Recv()
+		if err == io.EOF {
+			// Client closed the stream
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+
+		resp := &EchoResponse{
+			Message:   "Echo: " + req.Message,
+			Index:     req.Index,
+			Timestamp: timestamppb.Now(),
+		}
+
+		if err := stream.Send(resp); err != nil {
+			return err
+		}
+	}
+}
+
 func main() {
 	// Create service
 	svc := rpc.NewService("GreeterService",
@@ -119,8 +186,10 @@ func main() {
 			Out(CalculateResponse{}),
 	)
 
-	// Register streaming method
+	// Register streaming methods
 	rpc.MustRegisterServerStream(svc, "StreamNumbers", greeter.StreamNumbers)
+	rpc.MustRegisterClientStream(svc, "SumNumbers", greeter.SumNumbers)
+	rpc.MustRegisterBidiStream(svc, "EchoStream", greeter.EchoStream)
 
 	// Create HTTP handler
 	handler, err := rpc.NewHandler(svc)
