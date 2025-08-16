@@ -16,7 +16,7 @@ jobs:
     strategy:
       matrix:
         # Test with current and previous Go version
-        go-version: ['stable', 'oldstable']
+        go-version: ['1.24', '1.25']
     
     steps:
     - name: Checkout code
@@ -27,6 +27,7 @@ jobs:
       with:
         go-version: ${{ matrix.go-version }}
         cache: true
+        check-latest: true
 
     - name: Download dependencies
       run: go mod download
@@ -38,7 +39,7 @@ jobs:
         go test -v -coverprofile=coverage.out -covermode=atomic ./...
 
     - name: Upload coverage to Codecov
-      if: matrix.go-version == 'stable'
+      if: matrix.go-version == '1.25'
       uses: codecov/codecov-action@v5
       with:
         file: ./coverage.out
