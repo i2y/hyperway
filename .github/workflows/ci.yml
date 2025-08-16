@@ -15,8 +15,9 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        # Test with current and previous Go version
-        go-version: ['1.24', '1.25']
+        # For now, only test with Go 1.25 since go.mod requires it
+        # Will add 1.24 back once backward compatibility is ensured
+        go-version: ['1.25']
     
     steps:
     - name: Checkout code
