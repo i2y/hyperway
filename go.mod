@@ -1,6 +1,6 @@
 module github.com/i2y/hyperway
 
-go 1.24
+go 1.25
 
 require (
 	buf.build/go/hyperpb v0.1.0

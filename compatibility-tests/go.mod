@@ -1,6 +1,6 @@
 module github.com/i2y/hyperway/compatibility-tests
 
-go 1.24
+go 1.25
 
 require (
 	github.com/i2y/hyperway v0.0.0

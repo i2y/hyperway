@@ -15,7 +15,8 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        go-version: ['1.23', '1.24']
+        # Test with current and previous Go version
+        go-version: ['stable', 'oldstable']
     
     steps:
     - name: Checkout code
@@ -37,7 +38,7 @@ jobs:
         go test -v -coverprofile=coverage.out -covermode=atomic ./...
 
     - name: Upload coverage to Codecov
-      if: matrix.go-version == '1.24'
+      if: matrix.go-version == 'stable'
       uses: codecov/codecov-action@v5
       with:
         file: ./coverage.out
@@ -56,7 +57,7 @@ jobs:
     - name: Set up Go
       uses: actions/setup-go@v5
       with:
-        go-version: '1.24'
+        go-version-file: 'go.mod'
         cache: true
 
     - name: Run golangci-lint
@@ -67,11 +68,10 @@ jobs:
 
   build:
     name: Build
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
     strategy:
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
-        go-version: ['1.24']
     
     steps:
     - name: Checkout code
@@ -80,7 +80,7 @@ jobs:
     - name: Set up Go
       uses: actions/setup-go@v5
       with:
-        go-version: ${{ matrix.go-version }}
+        go-version-file: 'go.mod'
         cache: true
 
     - name: Build
@@ -104,7 +104,7 @@ jobs:
     - name: Set up Go
       uses: actions/setup-go@v5
       with:
-        go-version: '1.24'
+        go-version-file: 'go.mod'
         cache: true
 
     - name: Run benchmarks
@@ -121,7 +121,7 @@ jobs:
     - name: Set up Go
       uses: actions/setup-go@v5
       with:
-        go-version: '1.24'
+        go-version-file: 'go.mod'
         cache: true
 
     - name: Run gosec Security Scanner

@@ -1,6 +1,6 @@
 module wellknowntypes
 
-go 1.24.3
+go 1.25
 
 replace github.com/i2y/hyperway => ../..
 
