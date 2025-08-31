@@ -60,9 +60,9 @@ func main() {
 	)
 
 	// Register methods
-	svc.MustRegister("add", add)
-	svc.MustRegister("multiply", multiply)
-	svc.MustRegister("subtract", subtract)
+	rpc.MustRegisterAs(svc, "add", add)
+	rpc.MustRegisterAs(svc, "multiply", multiply)
+	rpc.MustRegisterAs(svc, "subtract", subtract)
 
 	// Create handler - this supports gRPC, Connect, gRPC-Web, and JSON-RPC
 	handler, err := rpc.NewHandler(svc)

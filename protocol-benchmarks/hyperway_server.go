@@ -177,19 +177,13 @@ func main() {
 	greeter := &greeterService{}
 
 	// Register methods
-	rpc.MustRegisterMethod(svc,
-		rpc.NewMethod("Greet", greeter.Greet).
-			In(GreetRequest{}).
-			Out(GreetResponse{}),
-		rpc.NewMethod("Calculate", greeter.Calculate).
-			In(CalculateRequest{}).
-			Out(CalculateResponse{}),
-	)
+	rpc.MustRegisterAs(svc, "Greet", greeter.Greet)
+	rpc.MustRegisterAs(svc, "Calculate", greeter.Calculate)
 
 	// Register streaming methods
-	rpc.MustRegisterServerStream(svc, "StreamNumbers", greeter.StreamNumbers)
-	rpc.MustRegisterClientStream(svc, "SumNumbers", greeter.SumNumbers)
-	rpc.MustRegisterBidiStream(svc, "EchoStream", greeter.EchoStream)
+	rpc.MustRegisterServerStreamAs(svc, "StreamNumbers", greeter.StreamNumbers)
+	rpc.MustRegisterClientStreamAs(svc, "SumNumbers", greeter.SumNumbers)
+	rpc.MustRegisterBidiStreamAs(svc, "EchoStream", greeter.EchoStream)
 
 	// Create HTTP handler
 	handler, err := rpc.NewHandler(svc)
