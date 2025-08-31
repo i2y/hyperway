@@ -31,7 +31,7 @@ func TestClientStreaming(t *testing.T) {
 	)
 
 	// Register client streaming method
-	err = rpc.RegisterClientStream[ClientStreamRequest, ClientStreamResponse](clientSvc, "ClientStream",
+	err = rpc.RegisterClientStreamAs[ClientStreamRequest, ClientStreamResponse](clientSvc, "ClientStream",
 		func(ctx context.Context, stream rpc.ClientStream[ClientStreamRequest]) (*ClientStreamResponse, error) {
 			// This is just for type registration on client side
 			return nil, nil

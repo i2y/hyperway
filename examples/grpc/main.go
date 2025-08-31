@@ -157,16 +157,16 @@ func main() {
 	)
 
 	// Register all methods
-	if err := rpc.Register(svc, "CreateUser", createUser); err != nil {
+	if err := rpc.RegisterAs(svc, "CreateUser", createUser); err != nil {
 		log.Fatalf("Failed to register CreateUser: %v", err)
 	}
-	if err := rpc.Register(svc, "GetUser", getUser); err != nil {
+	if err := rpc.RegisterAs(svc, "GetUser", getUser); err != nil {
 		log.Fatalf("Failed to register GetUser: %v", err)
 	}
-	if err := rpc.Register(svc, "ListUsers", listUsers); err != nil {
+	if err := rpc.RegisterAs(svc, "ListUsers", listUsers); err != nil {
 		log.Fatalf("Failed to register ListUsers: %v", err)
 	}
-	if err := rpc.Register(svc, "DeleteUser", deleteUser); err != nil {
+	if err := rpc.RegisterAs(svc, "DeleteUser", deleteUser); err != nil {
 		log.Fatalf("Failed to register DeleteUser: %v", err)
 	}
 

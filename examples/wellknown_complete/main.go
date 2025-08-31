@@ -121,10 +121,10 @@ func main() {
 	completeService := &CompleteService{}
 
 	// Register methods
-	if err := rpc.Register(svc, "ProcessComplete", completeService.ProcessComplete); err != nil {
+	if err := rpc.RegisterAs(svc, "ProcessComplete", completeService.ProcessComplete); err != nil {
 		log.Fatal(err)
 	}
-	if err := rpc.Register(svc, "CreateAny", completeService.CreateAny); err != nil {
+	if err := rpc.RegisterAs(svc, "CreateAny", completeService.CreateAny); err != nil {
 		log.Fatal(err)
 	}
 

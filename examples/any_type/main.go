@@ -96,10 +96,7 @@ func main() {
 	testService := &TestService{}
 
 	// Register method
-	err := rpc.RegisterMethod(svc,
-		rpc.NewMethod("ProcessAny", testService.ProcessAny).
-			In(AnyTestRequest{}).
-			Out(AnyTestResponse{}))
+	err := rpc.RegisterAs(svc, "ProcessAny", testService.ProcessAny)
 	if err != nil {
 		log.Fatalf("Failed to register method: %v", err)
 	}

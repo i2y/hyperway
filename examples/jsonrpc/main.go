@@ -55,18 +55,14 @@ func main() {
 	svc := rpc.NewService("CalculatorService",
 		rpc.WithPackage("calculator.v1"),
 		rpc.WithValidation(true),
-		rpc.WithProtocols(
-			rpc.WithDefaults(
-				rpc.JSONRPC("/api/jsonrpc", rpc.WithBatchLimit(defaultBatchLimit)),
-			)...,
-		),
+		rpc.WithJSONRPC("/api/jsonrpc", defaultBatchLimit),
 		rpc.WithDescription("A simple calculator service supporting JSON-RPC 2.0"),
 	)
 
 	// Register methods
-	rpc.MustRegister(svc, "add", add)
-	rpc.MustRegister(svc, "multiply", multiply)
-	rpc.MustRegister(svc, "subtract", subtract)
+	svc.MustRegister("add", add)
+	svc.MustRegister("multiply", multiply)
+	svc.MustRegister("subtract", subtract)
 
 	// Create handler - this supports gRPC, Connect, gRPC-Web, and JSON-RPC
 	handler, err := rpc.NewHandler(svc)

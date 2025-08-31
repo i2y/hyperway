@@ -122,21 +122,19 @@ func main() {
 	fmt.Println(string(configJSON))
 	fmt.Println()
 
-	// Create service with retry configuration
+	// Create retry interceptor
+	retryInterceptor := rpc.NewRetryInterceptor(&serviceConfig)
+
+	// Create service with retry configuration and interceptor
 	svc := rpc.NewService("EchoService",
 		rpc.WithPackage("example.echo.v1"),
 		rpc.WithValidation(true),
 		rpc.WithServiceConfig(string(configJSON)),
+		rpc.WithInterceptors(retryInterceptor),
 	)
 
-	// Create retry interceptor
-	retryInterceptor := rpc.NewRetryInterceptor(&serviceConfig)
-
-	// Register method with retry interceptor
-	rpc.MustRegisterMethod(svc,
-		rpc.NewMethod("Echo", EchoHandler).
-			WithInterceptors(retryInterceptor),
-	)
+	// Register method
+	rpc.MustRegisterAs(svc, "Echo", EchoHandler)
 
 	// Configure keepalive parameters
 	keepaliveParams := gateway.AggressiveKeepaliveParams() // For demo purposes

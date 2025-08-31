@@ -20,7 +20,7 @@ func TestGRPCWebProtocols(t *testing.T) {
 	svc := rpc.NewService("TestService", rpc.WithPackage("test.v1"))
 
 	// Register handler
-	err := rpc.Register(svc, "Echo", func(ctx context.Context, req *compatibility.SimpleRequest) (*compatibility.SimpleResponse, error) {
+	err := rpc.RegisterAs(svc, "Echo", func(ctx context.Context, req *compatibility.SimpleRequest) (*compatibility.SimpleResponse, error) {
 		return &compatibility.SimpleResponse{
 			StringField: "Echo: " + req.StringField,
 		}, nil

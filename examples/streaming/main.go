@@ -210,15 +210,15 @@ func main() {
 		rpc.WithPackage("examples.streaming.v1"),
 		rpc.WithReflection(true))
 
-	// Register server-streaming methods using type-safe registration
-	rpc.MustRegisterServerStream(svc, "Count", handleCount)
-	rpc.MustRegisterServerStream(svc, "Time", handleTime)
+	// Register server-streaming methods - names are automatically inferred from function names
+	rpc.MustRegisterServerStream(svc, handleCount)
+	rpc.MustRegisterServerStream(svc, handleTime)
 
 	// Register client-streaming method
-	rpc.MustRegisterClientStream(svc, "Sum", handleSum)
+	rpc.MustRegisterClientStream(svc, handleSum)
 
 	// Register bidirectional streaming method
-	rpc.MustRegisterBidiStream(svc, "Chat", handleChat)
+	rpc.MustRegisterBidiStream(svc, handleChat)
 
 	// Create handler
 	handler, err := rpc.NewHandler(svc)

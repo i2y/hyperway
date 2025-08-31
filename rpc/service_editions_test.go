@@ -25,8 +25,7 @@ func TestServiceWithEditions(t *testing.T) {
 			return &Output{Message: "Hello " + in.Name}, nil
 		}
 
-		method := NewMethod("Greet", handler)
-		err := svc.Register(method.Build())
+		err := RegisterAs(svc, "Greet", handler)
 		if err != nil {
 			t.Fatalf("Failed to register method: %v", err)
 		}
@@ -74,8 +73,7 @@ func TestServiceWithEditions(t *testing.T) {
 			return &Output{Message: "Hello " + in.Name}, nil
 		}
 
-		method := NewMethod("Greet", handler)
-		err := svc.Register(method.Build())
+		err := RegisterAs(svc, "Greet", handler)
 		if err != nil {
 			t.Fatalf("Failed to register method: %v", err)
 		}
@@ -131,8 +129,7 @@ func TestServiceWithEditions(t *testing.T) {
 			return &Output{}, nil
 		}
 
-		method := NewMethod("Test", handler)
-		err := svc.Register(method.Build())
+		err := RegisterAs(svc, "Test", handler)
 		if err != nil {
 			// EDITION_2024 might not be supported yet by the Go protobuf runtime
 			if testing.Verbose() {
