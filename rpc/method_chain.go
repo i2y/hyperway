@@ -11,8 +11,6 @@ type MethodChain struct {
 	name         string
 	handler      any
 	streamType   StreamType
-	inputType    any
-	outputType   any
 	options      MethodOptions
 	interceptors []Interceptor
 	description  string
@@ -74,7 +72,7 @@ func (m *MethodChain) WithRetry(maxAttempts int) *MethodChain {
 	// Add retry interceptor
 	retryPolicy := &RetryPolicy{
 		MaxAttempts:       maxAttempts,
-		BackoffMultiplier: 2.0,
+		BackoffMultiplier: defaultBackoffMultiplier,
 		InitialBackoff:    "100ms",
 		MaxBackoff:        "5s",
 	}
@@ -129,8 +127,7 @@ func (m *MethodChain) Register() error {
 	// Apply interceptors to the service if any
 	if len(m.interceptors) > 0 {
 		// Combine with existing service interceptors
-		allInterceptors := append(m.service.options.Interceptors, m.interceptors...)
-		m.service.options.Interceptors = allInterceptors
+		m.service.options.Interceptors = append(m.service.options.Interceptors, m.interceptors...)
 	}
 
 	// Register based on stream type

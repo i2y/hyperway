@@ -188,11 +188,9 @@ func (s *Service) MustRegisterService(registrar ServiceRegistrar) {
 // This is experimental and uses reflection to find methods with appropriate signatures.
 func (s *Service) AutoRegister(service any) error {
 	serviceType := reflect.TypeOf(service)
-	serviceValue := reflect.ValueOf(service)
 
 	if serviceType.Kind() == reflect.Ptr {
 		serviceType = serviceType.Elem()
-		serviceValue = serviceValue.Elem()
 	}
 
 	if serviceType.Kind() != reflect.Struct {
