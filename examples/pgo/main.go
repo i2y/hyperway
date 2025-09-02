@@ -65,7 +65,7 @@ func main() {
 	)
 
 	// Register method
-	if err := rpc.Register(svc, "ProcessMessage", processMessage); err != nil {
+	if err := rpc.RegisterAs(svc, "ProcessMessage", processMessage); err != nil {
 		log.Fatalf("Failed to register ProcessMessage: %v", err)
 	}
 

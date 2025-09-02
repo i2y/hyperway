@@ -23,11 +23,11 @@ func setupTestServer(t *testing.T) *httptest.Server {
 		rpc.WithValidation(true),
 	)
 
-	rpc.MustRegister(svc, "CreateUser", userService.CreateUser)
-	rpc.MustRegister(svc, "GetUser", userService.GetUser)
-	rpc.MustRegister(svc, "ListUsers", userService.ListUsers)
-	rpc.MustRegister(svc, "UpdateUser", userService.UpdateUser)
-	rpc.MustRegister(svc, "DeleteUser", userService.DeleteUser)
+	svc.MustRegister("CreateUser", userService.CreateUser)
+	svc.MustRegister("GetUser", userService.GetUser)
+	svc.MustRegister("ListUsers", userService.ListUsers)
+	svc.MustRegister("UpdateUser", userService.UpdateUser)
+	svc.MustRegister("DeleteUser", userService.DeleteUser)
 
 	handler, err := rpc.NewHandler(svc)
 	if err != nil {
@@ -260,11 +260,11 @@ func BenchmarkCreateUser(b *testing.B) {
 		rpc.WithValidation(true),
 	)
 
-	rpc.MustRegister(svc, "CreateUser", userService.CreateUser)
-	rpc.MustRegister(svc, "GetUser", userService.GetUser)
-	rpc.MustRegister(svc, "ListUsers", userService.ListUsers)
-	rpc.MustRegister(svc, "UpdateUser", userService.UpdateUser)
-	rpc.MustRegister(svc, "DeleteUser", userService.DeleteUser)
+	svc.MustRegister("CreateUser", userService.CreateUser)
+	svc.MustRegister("GetUser", userService.GetUser)
+	svc.MustRegister("ListUsers", userService.ListUsers)
+	svc.MustRegister("UpdateUser", userService.UpdateUser)
+	svc.MustRegister("DeleteUser", userService.DeleteUser)
 
 	handler, err := rpc.NewHandler(svc)
 	if err != nil {
@@ -306,11 +306,11 @@ func BenchmarkGetUser(b *testing.B) {
 		rpc.WithValidation(true),
 	)
 
-	rpc.MustRegister(svc, "CreateUser", userService.CreateUser)
-	rpc.MustRegister(svc, "GetUser", userService.GetUser)
-	rpc.MustRegister(svc, "ListUsers", userService.ListUsers)
-	rpc.MustRegister(svc, "UpdateUser", userService.UpdateUser)
-	rpc.MustRegister(svc, "DeleteUser", userService.DeleteUser)
+	svc.MustRegister("CreateUser", userService.CreateUser)
+	svc.MustRegister("GetUser", userService.GetUser)
+	svc.MustRegister("ListUsers", userService.ListUsers)
+	svc.MustRegister("UpdateUser", userService.UpdateUser)
+	svc.MustRegister("DeleteUser", userService.DeleteUser)
 
 	handler, err := rpc.NewHandler(svc)
 	if err != nil {

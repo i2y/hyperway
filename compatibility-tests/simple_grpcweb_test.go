@@ -28,7 +28,7 @@ func TestSimpleGRPCWeb(t *testing.T) {
 	}
 
 	// Register handler
-	err := rpc.Register(svc, "Echo", func(ctx context.Context, req *EchoReq) (*EchoResp, error) {
+	err := rpc.RegisterAs(svc, "Echo", func(ctx context.Context, req *EchoReq) (*EchoResp, error) {
 		fmt.Printf("Handler called with: %+v\n", req)
 		return &EchoResp{Message: "Echo: " + req.Message}, nil
 	})

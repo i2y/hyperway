@@ -66,7 +66,7 @@ func main() {
 	)
 
 	// Register handler
-	if err := rpc.Register(svc, "SayHello", sayHello); err != nil {
+	if err := rpc.RegisterAs(svc, "SayHello", sayHello); err != nil {
 		log.Fatal(err)
 	}
 

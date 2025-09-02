@@ -146,14 +146,14 @@ func main() {
 	)
 
 	// Register methods
-	if err := rpc.Register(svc, "Greet", greeterService.Greet); err != nil {
+	if err := rpc.RegisterAs(svc, "Greet", greeterService.Greet); err != nil {
 		log.Fatalf("Failed to register Greet: %v", err)
 	}
-	if err := rpc.Register(svc, "Calculate", greeterService.Calculate); err != nil {
+	if err := rpc.RegisterAs(svc, "Calculate", greeterService.Calculate); err != nil {
 		log.Fatalf("Failed to register Calculate: %v", err)
 	}
 	// Register streaming method
-	if err := rpc.RegisterServerStream(svc, "StreamNumbers", greeterService.StreamNumbers); err != nil {
+	if err := rpc.RegisterServerStreamAs(svc, "StreamNumbers", greeterService.StreamNumbers); err != nil {
 		log.Fatalf("Failed to register StreamNumbers: %v", err)
 	}
 

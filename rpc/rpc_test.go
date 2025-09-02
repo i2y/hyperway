@@ -79,13 +79,13 @@ func TestService_MethodRegistration(t *testing.T) {
 	svc := rpc.NewService("UserService", rpc.WithPackage("user.v1"))
 
 	// Register a method
-	err := rpc.Register(svc, "CreateUser", createUserHandler)
+	err := rpc.RegisterAs(svc, "CreateUser", createUserHandler)
 	if err != nil {
 		t.Fatalf("Failed to register method: %v", err)
 	}
 
 	// Register another method
-	err = rpc.Register(svc, "GetUser", getUserHandler)
+	err = rpc.RegisterAs(svc, "GetUser", getUserHandler)
 	if err != nil {
 		t.Fatalf("Failed to register method: %v", err)
 	}
@@ -94,11 +94,7 @@ func TestService_MethodRegistration(t *testing.T) {
 func TestService_HTTPHandler(t *testing.T) {
 	svc := rpc.NewService("UserService", rpc.WithPackage("user.v1"))
 
-	rpc.MustRegisterMethod(svc,
-		rpc.NewMethod("CreateUser", createUserHandler).
-			In(CreateUserRequest{}).
-			Out(CreateUserResponse{}),
-	)
+	rpc.MustRegisterAs(svc, "CreateUser", createUserHandler)
 
 	// Create gateway (which includes HTTP handlers)
 	handler, err := rpc.NewHandler(svc)
@@ -146,11 +142,7 @@ func TestService_Validation(t *testing.T) {
 		rpc.WithValidation(true),
 	)
 
-	rpc.MustRegisterMethod(svc,
-		rpc.NewMethod("CreateUser", createUserHandler).
-			In(CreateUserRequest{}).
-			Out(CreateUserResponse{}),
-	)
+	rpc.MustRegisterAs(svc, "CreateUser", createUserHandler)
 
 	handler, err := rpc.NewHandler(svc)
 	if err != nil {
@@ -185,11 +177,7 @@ func TestService_Validation(t *testing.T) {
 func TestService_ErrorHandling(t *testing.T) {
 	svc := rpc.NewService("UserService", rpc.WithPackage("user.v1"))
 
-	rpc.MustRegisterMethod(svc,
-		rpc.NewMethod("CreateUser", createUserHandler).
-			In(CreateUserRequest{}).
-			Out(CreateUserResponse{}),
-	)
+	rpc.MustRegisterAs(svc, "CreateUser", createUserHandler)
 
 	handler, err := rpc.NewHandler(svc)
 	if err != nil {
@@ -224,14 +212,8 @@ func TestService_ErrorHandling(t *testing.T) {
 func TestService_Gateway(t *testing.T) {
 	svc := rpc.NewService("UserService", rpc.WithPackage("user.v1"))
 
-	rpc.MustRegisterMethod(svc,
-		rpc.NewMethod("CreateUser", createUserHandler).
-			In(CreateUserRequest{}).
-			Out(CreateUserResponse{}),
-		rpc.NewMethod("GetUser", getUserHandler).
-			In(GetUserRequest{}).
-			Out(GetUserResponse{}),
-	)
+	rpc.MustRegisterAs(svc, "CreateUser", createUserHandler)
+	rpc.MustRegisterAs(svc, "GetUser", getUserHandler)
 
 	// Create gateway
 	handler, err := rpc.NewHandler(svc)
@@ -266,11 +248,7 @@ func TestService_Gateway(t *testing.T) {
 func TestService_ConnectProtocol(t *testing.T) {
 	svc := rpc.NewService("UserService", rpc.WithPackage("user.v1"))
 
-	rpc.MustRegisterMethod(svc,
-		rpc.NewMethod("CreateUser", createUserHandler).
-			In(CreateUserRequest{}).
-			Out(CreateUserResponse{}),
-	)
+	rpc.MustRegisterAs(svc, "CreateUser", createUserHandler)
 
 	handler, err := rpc.NewHandler(svc)
 	if err != nil {
@@ -308,26 +286,18 @@ func TestService_ConnectProtocol(t *testing.T) {
 }
 
 func TestMethodBuilder(t *testing.T) {
-	// Test method builder
-	method := rpc.NewMethod("TestMethod", createUserHandler).
-		Validate(true).
-		Build()
+	// Test automatic name generation
+	svc := rpc.NewService("TestService")
 
-	if method == nil {
-		t.Fatal("Expected non-nil method")
+	err := rpc.Register(svc, createUserHandler)
+	if err != nil {
+		t.Fatalf("Failed to register with automatic name: %v", err)
 	}
 
-	if method.Name != "TestMethod" {
-		t.Errorf("Expected method name 'TestMethod', got %s", method.Name)
-	}
-
-	// Verify types were inferred correctly
-	if method.InputType.Name() != "CreateUserRequest" {
-		t.Errorf("Expected input type 'CreateUserRequest', got %s", method.InputType.Name())
-	}
-
-	if method.OutputType.Name() != "CreateUserResponse" {
-		t.Errorf("Expected output type 'CreateUserResponse', got %s", method.OutputType.Name())
+	// Test explicit name
+	err = rpc.RegisterAs(svc, "CustomName", getUserHandler)
+	if err != nil {
+		t.Fatalf("Failed to register with explicit name: %v", err)
 	}
 }
 
@@ -335,8 +305,8 @@ func TestTypedRegistration(t *testing.T) {
 	svc := rpc.NewService("TypedService", rpc.WithPackage("typed.v1"))
 
 	// Test typed registration
-	rpc.MustRegister(svc, "CreateUser", createUserHandler)
-	rpc.MustRegister(svc, "GetUser", getUserHandler)
+	rpc.MustRegisterAs(svc, "CreateUser", createUserHandler)
+	rpc.MustRegisterAs(svc, "GetUser", getUserHandler)
 
 	// Create gateway
 	handler, err := rpc.NewHandler(svc)
@@ -371,18 +341,10 @@ func TestTypedRegistration(t *testing.T) {
 func TestService_MultipleServices(t *testing.T) {
 	// Create multiple services
 	userSvc := rpc.NewService("UserService", rpc.WithPackage("user.v1"))
-	rpc.MustRegisterMethod(userSvc,
-		rpc.NewMethod("CreateUser", createUserHandler).
-			In(CreateUserRequest{}).
-			Out(CreateUserResponse{}),
-	)
+	rpc.MustRegisterAs(userSvc, "CreateUser", createUserHandler)
 
 	adminSvc := rpc.NewService("AdminService", rpc.WithPackage("admin.v1"))
-	rpc.MustRegisterMethod(adminSvc,
-		rpc.NewMethod("GetUser", getUserHandler).
-			In(GetUserRequest{}).
-			Out(GetUserResponse{}),
-	)
+	rpc.MustRegisterAs(adminSvc, "GetUser", getUserHandler)
 
 	// Create gateway with both services
 	handler, err := rpc.NewHandler(userSvc, adminSvc)
@@ -446,7 +408,7 @@ func TestConnectTimeoutHeader(t *testing.T) {
 		}
 	}
 
-	rpc.MustRegister(svc, "Sleep", sleepHandler)
+	rpc.MustRegisterAs(svc, "Sleep", sleepHandler)
 
 	handler, err := rpc.NewHandler(svc)
 	if err != nil {
@@ -549,7 +511,7 @@ func TestErrorCodes(t *testing.T) {
 		}
 	}
 
-	rpc.MustRegister(svc, "TestError", errorHandler)
+	rpc.MustRegisterAs(svc, "TestError", errorHandler)
 
 	handler, err := rpc.NewHandler(svc)
 	if err != nil {
@@ -609,11 +571,7 @@ func TestErrorCodes(t *testing.T) {
 func BenchmarkService_JSONRequest(b *testing.B) {
 	svc := rpc.NewService("BenchService", rpc.WithPackage("bench.v1"))
 
-	rpc.MustRegisterMethod(svc,
-		rpc.NewMethod("CreateUser", createUserHandler).
-			In(CreateUserRequest{}).
-			Out(CreateUserResponse{}),
-	)
+	rpc.MustRegisterAs(svc, "CreateUser", createUserHandler)
 
 	handler, err := rpc.NewHandler(svc)
 	if err != nil {

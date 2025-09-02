@@ -134,10 +134,12 @@ func main() {
         rpc.WithMaxSendMessageSize(10 * 1024 * 1024),    // 10MB max send
     )
     
-    // Register your handlers
-    if err := rpc.Register(svc, "CreateUser", createUser); err != nil {
+    // Register your handlers - function name is automatically extracted
+    if err := rpc.Register(svc, createUser); err != nil {
         log.Fatal(err)
     }
+    // Or use explicit naming if preferred
+    // rpc.RegisterAs(svc, "CreateUser", createUser)
     
     // Create handler - returns a standard http.Handler
     handler, _ := rpc.NewHandler(svc)
@@ -153,28 +155,56 @@ func main() {
 
 ### 🔧 Protocol Configuration
 
-By default, Hyperway enables Connect, gRPC, and gRPC-Web protocols. You can customize this:
+By default, Hyperway enables Connect, gRPC, and gRPC-Web protocols. You can customize this using several approaches:
 
+#### Using Presets
 ```go
-// Enable JSON-RPC in addition to defaults
+// REST-like APIs (Connect + JSON-RPC)
 svc := rpc.NewService("UserService",
-    rpc.WithProtocols(
-        rpc.WithDefaults(rpc.JSONRPC("/api/jsonrpc"))...,
-    ),
+    rpc.WithPreset(rpc.PresetREST),
 )
 
-// Use specific protocols only
+// gRPC ecosystem (gRPC + gRPC-Web)
 svc := rpc.NewService("UserService",
-    rpc.WithProtocols(
-        rpc.Connect(),
-        rpc.JSONRPC("/api/jsonrpc"),
-    ),
+    rpc.WithPreset(rpc.PresetGRPC),
 )
 
-// Disable specific protocols
+// All protocols enabled
 svc := rpc.NewService("UserService",
-    rpc.WithoutGRPCWeb(),  // Disable gRPC-Web
+    rpc.WithPreset(rpc.PresetAll),
 )
+
+// Minimal (Connect only)
+svc := rpc.NewService("UserService",
+    rpc.WithPreset(rpc.PresetMinimal),
+)
+```
+
+#### Individual Protocol Control
+```go
+// Enable specific protocols
+svc := rpc.NewService("UserService",
+    rpc.WithConnect(true, true),        // Allow both JSON and Proto
+    rpc.WithGRPC(true),                 // Enable with reflection
+    rpc.WithJSONRPC("/api/jsonrpc", 10), // Path and batch limit
+)
+
+// Disable specific protocols while keeping others
+svc := rpc.NewService("UserService",
+    rpc.DisableGRPCWeb(),  // Disable only gRPC-Web
+)
+```
+
+#### Fluent Configuration Builder
+```go
+// Use the fluent builder for complex configurations
+config := rpc.ConfigureProtocols().
+    Connect(true, true).
+    GRPC(true).
+    JSONRPC("/api/jsonrpc", 100).
+    Build()
+
+svc := rpc.NewService("UserService", config)
 ```
 
 ## 🧪 Testing Your Service
@@ -190,7 +220,7 @@ curl -X POST http://localhost:8080/user.v1.UserService/CreateUser \
 
 ### JSON-RPC 2.0
 ```bash
-# Note: Requires JSON-RPC to be enabled with WithProtocols()
+# Note: Requires JSON-RPC to be enabled (see Protocol Configuration above)
 curl -X POST http://localhost:8080/api/jsonrpc \
   -H "Content-Type: application/json" \
   -d '{
@@ -431,7 +461,7 @@ func main() {
     )
     
     // Register methods - no need to specify types!
-    if err := rpc.Register(svc, "CreatePost", blogService.CreatePost); err != nil {
+    if err := rpc.Register(svc, blogService.CreatePost); err != nil {
         log.Fatal(err)
     }
     
@@ -461,13 +491,84 @@ authSvc := rpc.NewService("AuthService", rpc.WithPackage("api.v1"))
 adminSvc := rpc.NewService("AdminService", rpc.WithPackage("api.v1"))
 
 // Register handlers
-rpc.Register(userSvc, "CreateUser", createUser)
-rpc.Register(userSvc, "GetUser", getUser)
-rpc.Register(authSvc, "Login", login)
-rpc.Register(adminSvc, "DeleteUser", deleteUser)
+// Automatic function name extraction
+rpc.Register(userSvc, createUser)    // Registers as "CreateUser"
+rpc.Register(userSvc, getUser)       // Registers as "GetUser"
+rpc.Register(authSvc, login)         // Registers as "Login"
+rpc.Register(adminSvc, deleteUser)   // Registers as "DeleteUser"
 
 // Serve all services on one port
 handler, _ := rpc.NewHandler(userSvc, authSvc, adminSvc)
+```
+
+### Type-Safe Registration API
+
+Hyperway provides a type-safe registration API with automatic function name extraction:
+
+```go
+// Automatic name extraction from function names
+rpc.Register(svc, createUser)        // Registers as "CreateUser"
+rpc.Register(svc, getUserByID)       // Registers as "GetUserByID"
+rpc.Register(svc, service.UpdateProfile)  // Registers as "UpdateProfile"
+
+// Explicit naming when needed
+rpc.RegisterAs(svc, "CustomName", myHandler)
+
+// Streaming methods also support automatic naming
+rpc.RegisterServerStream(svc, watchEvents)   // Registers as "WatchEvents"
+rpc.RegisterClientStream(svc, uploadFiles)   // Registers as "UploadFiles"
+rpc.RegisterBidiStream(svc, chatHandler)     // Registers as "ChatHandler"
+```
+
+The registration functions use Go generics to maintain full type safety at compile time, preventing runtime type errors while keeping the API clean and simple.
+
+### Batch Registration
+
+For services with many methods, Hyperway provides batch registration capabilities:
+
+#### Register Multiple Methods at Once
+```go
+// Define methods with explicit types
+svc.RegisterAll(
+    rpc.Unary("CreateUser", createUser),
+    rpc.Unary("GetUser", getUser),
+    rpc.ServerStreamDef("WatchUsers", watchUsers),
+    rpc.ClientStreamDef("ImportUsers", importUsers),
+    rpc.BidiStreamDef("UserChat", userChat),
+)
+```
+
+#### Method Groups for Organization
+```go
+// Group related methods
+userMethods := rpc.Group().
+    Add(rpc.Unary("Create", userService.Create)).
+    Add(rpc.Unary("Get", userService.Get)).
+    Add(rpc.Unary("Update", userService.Update)).
+    Add(rpc.Unary("Delete", userService.Delete))
+
+// Register the group
+userMethods.Register(svc)
+```
+
+#### Service Registrar Pattern
+```go
+// Implement ServiceRegistrar interface
+type UserService struct {
+    db Database
+}
+
+func (s *UserService) RegisterMethods(svc *rpc.Service) error {
+    return svc.RegisterAll(
+        rpc.Unary("CreateUser", s.CreateUser),
+        rpc.Unary("GetUser", s.GetUser),
+        rpc.ServerStreamDef("WatchUsers", s.WatchUsers),
+    )
+}
+
+// Register all methods from the service
+userService := &UserService{db: db}
+svc.RegisterService(userService)
 ```
 
 ### Streaming RPCs
@@ -490,7 +591,7 @@ func (s *Service) WatchEvents(ctx context.Context, req *WatchRequest, stream rpc
     return nil
 }
 
-// Register: rpc.RegisterServerStream(svc, "WatchEvents", service.WatchEvents)
+// Register: rpc.RegisterServerStream(svc, service.WatchEvents)  // Auto-registers as "WatchEvents"
 ```
 
 #### Client Streaming
@@ -512,7 +613,7 @@ func (s *Service) UploadFiles(ctx context.Context, stream rpc.ClientStream[*File
     return &UploadResult{TotalSize: totalSize}, nil
 }
 
-// Register: rpc.RegisterClientStream(svc, "UploadFiles", service.UploadFiles)
+// Register: rpc.RegisterClientStream(svc, service.UploadFiles)  // Auto-registers as "UploadFiles"
 ```
 
 #### Bidirectional Streaming
@@ -538,7 +639,150 @@ func (s *Service) Chat(ctx context.Context, stream rpc.BidiStream[*ChatMessage, 
     }
 }
 
-// Register: rpc.RegisterBidiStream(svc, "Chat", service.Chat)
+// Register: rpc.RegisterBidiStream(svc, service.Chat)  // Auto-registers as "Chat"
+```
+
+### Error Handling
+
+Hyperway provides a fluent error builder API for creating rich, detailed errors:
+
+#### Error Builder Pattern
+```go
+// Simple error with code and message
+return rpc.InvalidArgument("email is required").Build()
+
+// Error with additional details
+return rpc.NotFound("user not found").
+    Detail("user_id", userID).
+    Detail("searched_in", "primary_db").
+    Build()
+
+// Error with formatted message
+return rpc.Internal("database error").
+    Messagef("failed to connect to %s:%d", host, port).
+    Detail("retry_after", "5s").
+    Build()
+
+// Custom error building
+return rpc.NewErrorBuilder().
+    Code(rpc.CodeResourceExhausted).
+    Message("quota exceeded").
+    Detail("limit", 1000).
+    Detail("current", 1050).
+    Build()
+```
+
+#### Convenience Error Constructors
+```go
+// All common error types have convenience constructors
+rpc.InvalidArgument("message")     // Invalid input
+rpc.NotFound("message")            // Resource not found  
+rpc.AlreadyExists("message")       // Resource already exists
+rpc.PermissionDenied("message")    // Insufficient permissions
+rpc.Unauthenticated("message")     // Authentication required
+rpc.ResourceExhausted("message")   // Quota/limit exceeded
+rpc.FailedPrecondition("message")  // Operation prerequisites not met
+rpc.Aborted("message")             // Operation aborted
+rpc.OutOfRange("message")          // Value out of range
+rpc.Unimplemented("message")       // Feature not implemented
+rpc.Internal("message")            // Internal server error
+rpc.Unavailable("message")         // Service unavailable
+rpc.DataLoss("message")            // Data loss or corruption
+rpc.DeadlineExceeded("message")    // Operation timeout
+```
+
+#### Validation Error Collection
+```go
+func validateUser(user *User) error {
+    collector := rpc.NewErrorCollector()
+    
+    if user.Email == "" {
+        collector.Add("email", "email is required")
+    } else if !isValidEmail(user.Email) {
+        collector.Add("email", "invalid email format")
+    }
+    
+    if user.Age < 18 {
+        collector.Addf("age", "must be at least %d years old", 18)
+    }
+    
+    if collector.HasErrors() {
+        return collector.AsError()  // Returns error with all validation issues
+    }
+    
+    return nil
+}
+```
+
+### Context Manipulation
+
+Hyperway provides a fluent API for working with request/response headers and trailers:
+
+#### Basic Context Operations
+```go
+func myHandler(ctx context.Context, req *Request) (*Response, error) {
+    // Fluent API for headers and trailers
+    rpc.Context(ctx).
+        SetHeader("X-Request-ID", requestID).
+        SetHeader("X-Version", "1.0.0").
+        SetTrailer("X-Processing-Time", processingTime)
+    
+    // Get request headers
+    helper := rpc.Context(ctx)
+    clientID := helper.GetHeader("X-Client-ID")
+    authToken := helper.GetHeader("Authorization")
+    
+    // Get request metadata
+    userAgent := helper.GetMetadata("user-agent")
+    
+    return &Response{...}, nil
+}
+```
+
+#### Headers and Trailers
+```go
+func streamingHandler(ctx context.Context, req *Request, stream rpc.ServerStream[Response]) error {
+    helper := rpc.Context(ctx)
+    
+    // Set response headers (must be before first Send)
+    helper.SetHeaders(map[string]string{
+        "X-Stream-ID": streamID,
+        "X-Total-Items": strconv.Itoa(totalItems),
+    })
+    
+    // Stream responses...
+    for _, item := range items {
+        if err := stream.Send(item); err != nil {
+            return err
+        }
+    }
+    
+    // Set trailers (after all sends)
+    helper.SetTrailers(map[string]string{
+        "X-Items-Sent": strconv.Itoa(sentCount),
+        "X-Duration": duration.String(),
+    })
+    
+    return nil
+}
+```
+
+#### Request Validation with Context
+```go
+func protectedHandler(ctx context.Context, req *Request) (*Response, error) {
+    // Validate required headers
+    err := rpc.Context(ctx).
+        RequireHeader("Authorization", "auth token required").
+        RequireHeader("X-API-Key", "API key required").
+        Validate()
+    
+    if err != nil {
+        return nil, err
+    }
+    
+    // Process request...
+    return &Response{...}, nil
+}
 ```
 
 #### Complete Example with All Streaming Types
@@ -652,9 +896,10 @@ func main() {
     )
     
     // Register all streaming methods
-    rpc.MustRegisterServerStream(svc, "WatchEvents", service.WatchEvents)
-    rpc.MustRegisterClientStream(svc, "UploadFiles", service.UploadFiles)
-    rpc.MustRegisterBidiStream(svc, "Chat", service.Chat)
+    // Automatic function name extraction for streaming methods
+    rpc.MustRegisterServerStream(svc, service.WatchEvents)  // Registers as "WatchEvents"
+    rpc.MustRegisterClientStream(svc, service.UploadFiles)  // Registers as "UploadFiles"
+    rpc.MustRegisterBidiStream(svc, service.Chat)           // Registers as "Chat"
     
     // Create handler and serve
     handler, err := rpc.NewHandler(svc)
@@ -843,7 +1088,7 @@ func main() {
     )
     
     // Register handlers
-    rpc.Register(svc, "CreateOrder", createOrder)
+    rpc.Register(svc, createOrder)  // Automatically registers as "CreateOrder"
     
     // Create handler
     handler, _ := rpc.NewHandler(svc)
@@ -1044,6 +1289,124 @@ A: Hyperway is currently under active development but may be suitable for produc
 
 ### Q: What about cross-language support?
 A: Export your schemas as `.proto` files and generate clients in any language. Hyperway maintains full wire compatibility with standard gRPC and Connect clients, so your services work seamlessly with clients written in any supported language.
+
+## 📚 API Reference
+
+### Service Creation
+```go
+// Create a new service
+svc := rpc.NewService(name string, opts ...ServiceOption)
+
+// Service options
+rpc.WithPackage(pkg string)                    // Set protobuf package
+rpc.WithValidation(enabled bool)                // Enable validation
+rpc.WithReflection(enabled bool)                // Enable gRPC reflection
+rpc.WithMaxReceiveMessageSize(bytes int)        // Max receive size
+rpc.WithMaxSendMessageSize(bytes int)           // Max send size
+rpc.WithInterceptors(interceptors ...Interceptor) // Add interceptors
+rpc.WithServiceConfig(json string)              // gRPC service config
+rpc.WithEdition(edition string)                 // Protobuf edition
+```
+
+### Method Registration
+```go
+// Automatic name extraction
+rpc.Register(svc, handler)                      // Extract name from function
+rpc.RegisterServerStream(svc, handler)          // Server streaming
+rpc.RegisterClientStream(svc, handler)          // Client streaming
+rpc.RegisterBidiStream(svc, handler)            // Bidirectional streaming
+
+// Explicit naming
+rpc.RegisterAs(svc, name, handler)              // Unary with name
+rpc.RegisterServerStreamAs(svc, name, handler)  // Server stream with name
+rpc.RegisterClientStreamAs(svc, name, handler)  // Client stream with name
+rpc.RegisterBidiStreamAs(svc, name, handler)    // Bidi stream with name
+
+// Batch registration
+svc.RegisterAll(methods ...MethodDefinition)    // Register multiple
+rpc.Unary(name, handler)                        // Unary method definition
+rpc.ServerStreamDef(name, handler)              // Server stream definition
+rpc.ClientStreamDef(name, handler)              // Client stream definition
+rpc.BidiStreamDef(name, handler)                // Bidi stream definition
+```
+
+### Protocol Configuration
+```go
+// Presets
+rpc.WithPreset(rpc.PresetREST)                  // Connect + JSON-RPC
+rpc.WithPreset(rpc.PresetGRPC)                  // gRPC + gRPC-Web
+rpc.WithPreset(rpc.PresetAll)                   // All protocols
+rpc.WithPreset(rpc.PresetMinimal)               // Connect only
+
+// Individual protocols
+rpc.WithConnect(allowJSON, allowProto bool)     // Enable Connect
+rpc.WithGRPC(enableReflection bool)             // Enable gRPC
+rpc.WithGRPCWeb()                                // Enable gRPC-Web
+rpc.WithJSONRPC(path string, batchLimit int)    // Enable JSON-RPC
+
+// Disable protocols
+rpc.DisableConnect()                            // Disable Connect
+rpc.DisableGRPC()                                // Disable gRPC
+rpc.DisableGRPCWeb()                            // Disable gRPC-Web
+rpc.DisableJSONRPC()                            // Disable JSON-RPC
+
+// Fluent builder
+rpc.ConfigureProtocols().
+    Connect(true, true).
+    GRPC(true).
+    Build()
+```
+
+### Error Handling
+```go
+// Error builders
+rpc.InvalidArgument(msg)                        // Create error builder
+rpc.NotFound(msg)                              // Common error types
+rpc.Internal(msg)                              // Internal error
+rpc.NewErrorBuilder()                          // Custom builder
+
+// Error builder methods
+.Code(code)                                    // Set error code
+.Message(msg)                                  // Set message
+.Messagef(format, args...)                    // Formatted message
+.Detail(key, value)                           // Add detail
+.Details(map[string]any)                      // Add multiple details
+.Build()                                       // Build error
+
+// Error collection
+collector := rpc.NewErrorCollector()
+collector.Add(field, message)                  // Add error
+collector.Addf(field, format, args...)        // Add formatted
+collector.HasErrors()                         // Check if has errors
+collector.AsError()                           // Convert to error
+```
+
+### Context Manipulation
+```go
+// Context helper
+helper := rpc.Context(ctx)
+
+// Headers and trailers
+helper.SetHeader(key, value)                   // Set response header
+helper.SetHeaders(map[string]string)          // Set multiple headers
+helper.SetTrailer(key, value)                 // Set response trailer
+helper.SetTrailers(map[string]string)         // Set multiple trailers
+
+// Get request data
+helper.GetHeader(key)                         // Get request header
+helper.GetMetadata(key)                       // Get request metadata
+helper.RequireHeader(key, errorMsg)           // Require header
+helper.Validate()                             // Validate requirements
+```
+
+### Handler Creation
+```go
+// Create HTTP handler from services
+handler, err := rpc.NewHandler(services ...*Service)
+
+// Handler options
+rpc.WithGatewayOptions(opts ...gateway.Option)
+```
 
 ## 🙏 Acknowledgments
 

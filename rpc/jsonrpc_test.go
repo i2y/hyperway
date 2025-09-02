@@ -29,13 +29,11 @@ func TestJSONRPCHandler(t *testing.T) {
 	// Create service with JSON-RPC enabled
 	svc := NewService("TestService",
 		WithPackage("test.v1"),
-		WithProtocols(
-			WithDefaults(JSONRPC("/jsonrpc"))...,
-		),
+		WithJSONRPC("/jsonrpc", 10), // Enable JSON-RPC at /jsonrpc endpoint
 	)
 
-	// Register test method
-	MustRegister(svc, "SayHello", testHandler)
+	// Register test method with explicit name
+	MustRegisterAs(svc, "SayHello", testHandler)
 
 	// Create gateway
 	handler, err := NewHandler(svc)

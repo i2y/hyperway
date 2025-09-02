@@ -67,21 +67,29 @@ install-cli:
 test:
 	@echo "Running tests..."
 	@$(GOTEST) -v ./...
+	@echo "Running compatibility tests..."
+	@cd compatibility-tests && $(GOTEST) -v ./...
 
 # Run tests with verbose output
 test-v:
 	@echo "Running tests (verbose)..."
 	@$(GOTEST) -v -count=1 ./...
+	@echo "Running compatibility tests (verbose)..."
+	@cd compatibility-tests && $(GOTEST) -v -count=1 ./...
 
 # Run tests with race detector
 test-race:
 	@echo "Running tests with race detector..."
 	@$(GOTEST) -race -v ./...
+	@echo "Running compatibility tests with race detector..."
+	@cd compatibility-tests && $(GOTEST) -race -v ./...
 
 # Run tests with coverage
 test-cover:
 	@echo "Running tests with coverage..."
 	@$(GOTEST) -v -coverprofile=$(COVERAGE_FILE) -covermode=atomic ./...
+	@echo "Running compatibility tests with coverage..."
+	@cd compatibility-tests && $(GOTEST) -v -coverprofile=../compatibility-$(COVERAGE_FILE) -covermode=atomic ./...
 	@$(GOCOVER) -html=$(COVERAGE_FILE) -o coverage.html
 	@echo "Coverage report generated: coverage.html"
 

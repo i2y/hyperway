@@ -131,10 +131,10 @@ func main() {
 	configService := &ConfigService{}
 
 	// Register methods
-	if err := rpc.Register(svc, "UpdateConfig", configService.UpdateConfig); err != nil {
+	if err := rpc.RegisterAs(svc, "UpdateConfig", configService.UpdateConfig); err != nil {
 		log.Fatal(err)
 	}
-	if err := rpc.Register(svc, "ProcessFlexibleData", configService.ProcessFlexibleData); err != nil {
+	if err := rpc.RegisterAs(svc, "ProcessFlexibleData", configService.ProcessFlexibleData); err != nil {
 		log.Fatal(err)
 	}
 

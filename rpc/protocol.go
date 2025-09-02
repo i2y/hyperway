@@ -195,17 +195,3 @@ func JSONRPC(path string, opts ...JSONRPCOption) Protocol {
 	}
 	return j
 }
-
-// Defaults returns the default set of protocols (Connect, gRPC, gRPC-Web)
-func Defaults() []Protocol {
-	return []Protocol{
-		Connect(),
-		GRPC(),
-		GRPCWeb(),
-	}
-}
-
-// WithDefaults returns the default protocols plus additional ones
-func WithDefaults(additional ...Protocol) []Protocol {
-	return append(Defaults(), additional...)
-}

@@ -103,13 +103,16 @@ func main() {
 		rpc.WithValidation(true),
 	)
 
-	// Register methods with documentation
-	rpc.MustRegisterMethod(svc,
-		rpc.NewMethod("CreateUser", CreateUser).
-			WithDescription("CreateUser creates a new user account with the provided information. Returns an error if the email or username already exists."),
-		rpc.NewMethod("GetUser", GetUser).
-			WithDescription("GetUser retrieves user information by user ID. Returns NOT_FOUND if the user doesn't exist."),
-	)
+	// Register methods with documentation using method chain
+	svc.Method("CreateUser").
+		Unary(CreateUser).
+		WithDescription("CreateUser creates a new user account with the provided information. Returns an error if the email or username already exists.").
+		MustRegister()
+
+	svc.Method("GetUser").
+		Unary(GetUser).
+		WithDescription("GetUser retrieves user information by user ID. Returns NOT_FOUND if the user doesn't exist.").
+		MustRegister()
 
 	// Export all proto files with comments
 	protos, err := svc.ExportAllProtos()

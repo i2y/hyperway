@@ -36,18 +36,14 @@ func TestProtoComparison(t *testing.T) {
 	proto3Svc := rpc.NewService("MessageService",
 		rpc.WithPackage("test.v1"),
 	)
-	rpc.MustRegisterMethod(proto3Svc,
-		rpc.NewMethod("Send", handler),
-	)
+	rpc.MustRegisterAs(proto3Svc, "Send", handler)
 
 	// Create service with Editions 2023
 	editionsSvc := rpc.NewService("MessageService",
 		rpc.WithPackage("test.v1"),
 		rpc.WithEdition(schema.Edition2023),
 	)
-	rpc.MustRegisterMethod(editionsSvc,
-		rpc.NewMethod("Send", handler),
-	)
+	rpc.MustRegisterAs(editionsSvc, "Send", handler)
 
 	// Export proto3 version
 	proto3Content, err := proto3Svc.ExportProto()
@@ -97,9 +93,7 @@ func TestFeatureComparison(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			// Register the same method on both services
-			rpc.MustRegisterMethod(tc.service,
-				rpc.NewMethod("Process", handler),
-			)
+			rpc.MustRegisterAs(tc.service, "Process", handler)
 
 			// Get file descriptor set
 			fdset := tc.service.GetFileDescriptorSet()

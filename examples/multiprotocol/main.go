@@ -62,7 +62,7 @@ func main() {
 	)
 
 	// Register the echo method
-	if err := rpc.Register(svc, "Echo", echoHandler); err != nil {
+	if err := rpc.RegisterAs(svc, "Echo", echoHandler); err != nil {
 		log.Fatalf("Failed to register Echo: %v", err)
 	}
 

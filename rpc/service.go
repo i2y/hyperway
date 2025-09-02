@@ -266,74 +266,6 @@ func (s *Service) MustRegister(method *Method) {
 	}
 }
 
-// Handler represents a typed RPC handler function.
-type Handler[TIn, TOut any] func(context.Context, *TIn) (*TOut, error)
-
-// NewMethod creates a new method.
-func NewMethod[TIn, TOut any](name string, handler Handler[TIn, TOut]) *MethodBuilder {
-	// Get the input and output types from the generic parameters
-	var in TIn
-	var out TOut
-	inputType := reflect.TypeOf(in)
-	outputType := reflect.TypeOf(out)
-
-	return &MethodBuilder{
-		method: &Method{
-			Name:       name,
-			Handler:    handler,
-			InputType:  inputType,
-			OutputType: outputType,
-			Options:    MethodOptions{},
-			StreamType: StreamTypeUnary,
-		},
-	}
-}
-
-// NewServerStreamMethod creates a server-streaming method.
-func NewServerStreamMethod[TIn, TOut any](name string, handler ServerStreamHandler[TIn, TOut]) *MethodBuilder {
-	var in TIn
-	var out TOut
-	return &MethodBuilder{
-		method: &Method{
-			Name:       name,
-			Handler:    handler,
-			InputType:  reflect.TypeOf(in),
-			OutputType: reflect.TypeOf(out),
-			StreamType: StreamTypeServerStream,
-		},
-	}
-}
-
-// NewClientStreamMethod creates a client-streaming method.
-func NewClientStreamMethod[TIn, TOut any](name string, handler ClientStreamHandler[TIn, TOut]) *MethodBuilder {
-	var in TIn
-	var out TOut
-	return &MethodBuilder{
-		method: &Method{
-			Name:       name,
-			Handler:    handler,
-			InputType:  reflect.TypeOf(in),
-			OutputType: reflect.TypeOf(out),
-			StreamType: StreamTypeClientStream,
-		},
-	}
-}
-
-// NewBidiStreamMethod creates a bidirectional streaming method.
-func NewBidiStreamMethod[TIn, TOut any](name string, handler BidiStreamHandler[TIn, TOut]) *MethodBuilder {
-	var in TIn
-	var out TOut
-	return &MethodBuilder{
-		method: &Method{
-			Name:       name,
-			Handler:    handler,
-			InputType:  reflect.TypeOf(in),
-			OutputType: reflect.TypeOf(out),
-			StreamType: StreamTypeBidiStream,
-		},
-	}
-}
-
 // MethodBuilder provides a fluent API for building methods.
 type MethodBuilder struct {
 	method *Method
@@ -816,87 +748,6 @@ func NewHandler(services ...*Service) (http.Handler, error) {
 	return gw, nil
 }
 
-// Register registers a typed method (recommended).
-func Register[TIn, TOut any](svc *Service, name string, handler Handler[TIn, TOut]) error {
-	method := NewMethod(name, handler)
-	return svc.Register(method.Build())
-}
-
-// MustRegister registers a typed method and panics on error (recommended).
-func MustRegister[TIn, TOut any](svc *Service, name string, handler Handler[TIn, TOut]) {
-	if err := Register(svc, name, handler); err != nil {
-		panic(err)
-	}
-}
-
-// RegisterMethod registers a method using the builder pattern.
-func RegisterMethod(svc *Service, methods ...*MethodBuilder) error {
-	for _, mb := range methods {
-		method := mb.Build()
-		// Use appropriate registration based on stream type
-		if method.StreamType != StreamTypeUnary {
-			if err := svc.RegisterStreamingMethod(method); err != nil {
-				return err
-			}
-		} else {
-			if err := svc.Register(method); err != nil {
-				return err
-			}
-		}
-	}
-	return nil
-}
-
-// MustRegisterMethod registers methods using the builder pattern and panics on error.
-func MustRegisterMethod(svc *Service, methods ...*MethodBuilder) {
-	if err := RegisterMethod(svc, methods...); err != nil {
-		panic(err)
-	}
-}
-
-// RegisterServerStream registers a server-streaming method with type safety.
-func RegisterServerStream[TIn, TOut any](svc *Service, name string, handler ServerStreamHandler[TIn, TOut]) error {
-	// Create a wrapper that converts the typed handler to an untyped one
-	wrappedHandler := func(ctx context.Context, req any, stream any) error {
-		// Type assert the request
-		typedReq, ok := req.(*TIn)
-		if !ok {
-			return fmt.Errorf("invalid request type: expected *%T, got %T", (*TIn)(nil), req)
-		}
-
-		// Type assert the stream
-		typedStream, ok := stream.(ServerStream[TOut])
-		if !ok {
-			// If direct cast fails, wrap the stream
-			baseStream, ok := stream.(*serverStreamWriter)
-			if !ok {
-				return fmt.Errorf("invalid stream type: %T", stream)
-			}
-			typedStream = &typedServerStream[TOut]{baseStream}
-		}
-
-		// Call the original handler
-		return handler(ctx, typedReq, typedStream)
-	}
-
-	method := &Method{
-		Name:       name,
-		Handler:    wrappedHandler,
-		InputType:  reflect.TypeOf((*TIn)(nil)).Elem(),
-		OutputType: reflect.TypeOf((*TOut)(nil)).Elem(),
-		StreamType: StreamTypeServerStream,
-	}
-
-	return svc.RegisterStreamingMethod(method)
-}
-
-// MustRegisterServerStream registers a server-streaming method and panics on error.
-func MustRegisterServerStream[TIn, TOut any](svc *Service, name string, handler ServerStreamHandler[TIn, TOut]) {
-	if err := RegisterServerStream(svc, name, handler); err != nil {
-		panic(err)
-	}
-}
-
 // ptr is a helper to create a pointer to a value.
 func ptr[T any](v T) *T {
 	return &v
@@ -948,40 +799,6 @@ func WithServiceConfig(jsonConfig string) ServiceOption {
 func WithDescription(description string) ServiceOption {
 	return func(o *ServiceOptions) {
 		o.Description = description
-	}
-}
-
-// WithProtocols sets the enabled protocols for the service.
-// This replaces the default protocols.
-func WithProtocols(protocols ...Protocol) ServiceOption {
-	return func(o *ServiceOptions) {
-		// Clear existing protocols and set new ones
-		o.EnabledProtocols = make(map[string]ProtocolConfig)
-		for _, p := range protocols {
-			config := p.Config()
-			o.EnabledProtocols[config.Name] = config
-		}
-	}
-}
-
-// WithoutGRPC disables gRPC protocol
-func WithoutGRPC() ServiceOption {
-	return func(o *ServiceOptions) {
-		delete(o.EnabledProtocols, "grpc")
-	}
-}
-
-// WithoutGRPCWeb disables gRPC-Web protocol
-func WithoutGRPCWeb() ServiceOption {
-	return func(o *ServiceOptions) {
-		delete(o.EnabledProtocols, "grpcweb")
-	}
-}
-
-// WithoutConnect disables Connect protocol
-func WithoutConnect() ServiceOption {
-	return func(o *ServiceOptions) {
-		delete(o.EnabledProtocols, "connect")
 	}
 }
 

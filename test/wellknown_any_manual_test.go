@@ -39,7 +39,7 @@ func TestAnyManual(t *testing.T) {
 	}
 
 	// Register handler
-	if err := rpc.Register(svc, "TestAnyManual", handler); err != nil {
+	if err := rpc.RegisterAs(svc, "TestAnyManual", handler); err != nil {
 		t.Fatal(err)
 	}
 

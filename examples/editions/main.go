@@ -57,7 +57,7 @@ func main() {
 	)
 
 	// Register the CreateUser method
-	if err := rpc.Register(svc, "CreateUser", CreateUser); err != nil {
+	if err := rpc.RegisterAs(svc, "CreateUser", CreateUser); err != nil {
 		log.Fatalf("Failed to register CreateUser: %v", err)
 	}
 

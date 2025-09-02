@@ -20,7 +20,7 @@ func TestMessageSizeLimits(t *testing.T) {
 		svc := rpc.NewService("TestService", rpc.WithPackage("test.v1"))
 
 		// Register a simple echo handler
-		err := rpc.Register(svc, "Echo", func(ctx context.Context, req *TestRequest) (*TestResponse, error) {
+		err := rpc.RegisterAs(svc, "Echo", func(ctx context.Context, req *TestRequest) (*TestResponse, error) {
 			return &TestResponse{Message: req.Message}, nil
 		})
 		if err != nil {
@@ -67,7 +67,7 @@ func TestMessageSizeLimits(t *testing.T) {
 			rpc.WithMaxReceiveMessageSize(100*1024), // 100KB
 		)
 
-		err := rpc.Register(svc, "Echo", func(ctx context.Context, req *TestRequest) (*TestResponse, error) {
+		err := rpc.RegisterAs(svc, "Echo", func(ctx context.Context, req *TestRequest) (*TestResponse, error) {
 			return &TestResponse{Message: req.Message}, nil
 		})
 		if err != nil {
@@ -115,7 +115,7 @@ func TestMessageSizeLimits(t *testing.T) {
 		)
 
 		// Register handler that returns large response
-		err := rpc.Register(svc, "GetLarge", func(ctx context.Context, req *TestRequest) (*TestResponse, error) {
+		err := rpc.RegisterAs(svc, "GetLarge", func(ctx context.Context, req *TestRequest) (*TestResponse, error) {
 			// Try to return a response larger than 1KB
 			return &TestResponse{Message: strings.Repeat("x", 2000)}, nil
 		})
@@ -151,7 +151,7 @@ func TestMessageSizeLimits(t *testing.T) {
 		)
 
 		// Register server-streaming handler
-		err := rpc.RegisterServerStream(svc, "StreamLarge",
+		err := rpc.RegisterServerStreamAs(svc, "StreamLarge",
 			func(ctx context.Context, req *TestRequest, stream rpc.ServerStream[TestResponse]) error {
 				// Try to send a message larger than 1KB
 				largeResp := &TestResponse{Message: strings.Repeat("x", 2000)}
@@ -202,7 +202,7 @@ func TestMessageSizeLimits(t *testing.T) {
 			rpc.WithMaxReceiveMessageSize(100*1024), // 100KB limit
 		)
 
-		err := rpc.Register(svc, "Echo", func(ctx context.Context, req *TestRequest) (*TestResponse, error) {
+		err := rpc.RegisterAs(svc, "Echo", func(ctx context.Context, req *TestRequest) (*TestResponse, error) {
 			return &TestResponse{Message: req.Message}, nil
 		})
 		if err != nil {
@@ -288,7 +288,7 @@ func TestGRPCMessageSizeLimits(t *testing.T) {
 		rpc.WithMaxSendMessageSize(2048),    // 2KB send limit
 	)
 
-	err := rpc.Register(svc, "Echo", func(ctx context.Context, req *TestRequest) (*TestResponse, error) {
+	err := rpc.RegisterAs(svc, "Echo", func(ctx context.Context, req *TestRequest) (*TestResponse, error) {
 		return &TestResponse{Message: req.Message}, nil
 	})
 	if err != nil {

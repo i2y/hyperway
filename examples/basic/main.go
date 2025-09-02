@@ -68,11 +68,11 @@ func main() {
 		rpc.WithReflection(true),
 	)
 
-	// Register methods - types are automatically inferred!
-	if err := rpc.Register(svc, "CreateUser", createUser); err != nil {
+	// Register methods - names and types are automatically inferred!
+	if err := rpc.Register(svc, createUser); err != nil {
 		log.Fatalf("Failed to register CreateUser: %v", err)
 	}
-	if err := rpc.Register(svc, "GetUser", getUser); err != nil {
+	if err := rpc.Register(svc, getUser); err != nil {
 		log.Fatalf("Failed to register GetUser: %v", err)
 	}
 

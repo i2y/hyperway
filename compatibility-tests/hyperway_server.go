@@ -19,21 +19,21 @@ func CreateHyperwayServer() (http.Handler, error) {
 	)
 
 	// Register unary methods
-	if err := rpc.Register(svc, "SimpleEcho", SimpleEcho); err != nil {
+	if err := rpc.RegisterAs(svc, "SimpleEcho", SimpleEcho); err != nil {
 		return nil, fmt.Errorf("failed to register SimpleEcho: %w", err)
 	}
-	if err := rpc.Register(svc, "ComplexEcho", ComplexEcho); err != nil {
+	if err := rpc.RegisterAs(svc, "ComplexEcho", ComplexEcho); err != nil {
 		return nil, fmt.Errorf("failed to register ComplexEcho: %w", err)
 	}
-	if err := rpc.Register(svc, "WellKnownEcho", WellKnownEcho); err != nil {
+	if err := rpc.RegisterAs(svc, "WellKnownEcho", WellKnownEcho); err != nil {
 		return nil, fmt.Errorf("failed to register WellKnownEcho: %w", err)
 	}
-	if err := rpc.Register(svc, "TestError", TestError); err != nil {
+	if err := rpc.RegisterAs(svc, "TestError", TestError); err != nil {
 		return nil, fmt.Errorf("failed to register TestError: %w", err)
 	}
 
 	// Register streaming method with proper types
-	if err := rpc.RegisterServerStream[StreamRequest, StreamResponse](svc, "ServerStream",
+	if err := rpc.RegisterServerStreamAs[StreamRequest, StreamResponse](svc, "ServerStream",
 		func(ctx context.Context, req *StreamRequest, stream rpc.ServerStream[StreamResponse]) error {
 			// Call the actual handler
 			return ServerStream(ctx, req, stream)
@@ -42,7 +42,7 @@ func CreateHyperwayServer() (http.Handler, error) {
 	}
 
 	// Register large streaming method for compression testing
-	if err := rpc.RegisterServerStream[StreamRequest, StreamResponse](svc, "ServerStreamLarge",
+	if err := rpc.RegisterServerStreamAs[StreamRequest, StreamResponse](svc, "ServerStreamLarge",
 		func(ctx context.Context, req *StreamRequest, stream rpc.ServerStream[StreamResponse]) error {
 			// Call the handler for large messages
 			return ServerStreamLarge(ctx, req, stream)
@@ -51,7 +51,7 @@ func CreateHyperwayServer() (http.Handler, error) {
 	}
 
 	// Register client streaming method
-	if err := rpc.RegisterClientStream[ClientStreamRequest, ClientStreamResponse](svc, "ClientStream",
+	if err := rpc.RegisterClientStreamAs[ClientStreamRequest, ClientStreamResponse](svc, "ClientStream",
 		func(ctx context.Context, stream rpc.ClientStream[ClientStreamRequest]) (*ClientStreamResponse, error) {
 			// Wrap the stream to match the interface
 			wrapper := &clientStreamWrapper{stream: stream}
@@ -61,7 +61,7 @@ func CreateHyperwayServer() (http.Handler, error) {
 	}
 
 	// Register bidirectional streaming method
-	if err := rpc.RegisterBidiStream[BidiStreamRequest, BidiStreamResponse](svc, "BidiStream",
+	if err := rpc.RegisterBidiStreamAs[BidiStreamRequest, BidiStreamResponse](svc, "BidiStream",
 		func(ctx context.Context, stream rpc.BidiStream[BidiStreamRequest, BidiStreamResponse]) error {
 			// Wrap the stream to match the interface
 			wrapper := &bidiStreamWrapper{stream: stream}
@@ -117,11 +117,11 @@ func ExportProtoFiles(outputDir string) error {
 	)
 
 	// Register all methods
-	_ = rpc.Register(svc, "SimpleEcho", SimpleEcho)
-	_ = rpc.Register(svc, "ComplexEcho", ComplexEcho)
-	_ = rpc.Register(svc, "WellKnownEcho", WellKnownEcho)
-	_ = rpc.Register(svc, "TestError", TestError)
-	_ = rpc.RegisterServerStream[StreamRequest, StreamResponse](svc, "ServerStream",
+	_ = rpc.RegisterAs(svc, "SimpleEcho", SimpleEcho)
+	_ = rpc.RegisterAs(svc, "ComplexEcho", ComplexEcho)
+	_ = rpc.RegisterAs(svc, "WellKnownEcho", WellKnownEcho)
+	_ = rpc.RegisterAs(svc, "TestError", TestError)
+	_ = rpc.RegisterServerStreamAs[StreamRequest, StreamResponse](svc, "ServerStream",
 		func(ctx context.Context, req *StreamRequest, stream rpc.ServerStream[StreamResponse]) error {
 			return ServerStream(ctx, req, stream)
 		})

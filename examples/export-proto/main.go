@@ -154,10 +154,10 @@ func main() {
 	)
 
 	// Register methods
-	if err := rpc.Register(svc, "CreateUser", createUser); err != nil {
+	if err := rpc.RegisterAs(svc, "CreateUser", createUser); err != nil {
 		log.Fatalf("Failed to register CreateUser: %v", err)
 	}
-	if err := rpc.Register(svc, "GetUser", getUser); err != nil {
+	if err := rpc.RegisterAs(svc, "GetUser", getUser); err != nil {
 		log.Fatalf("Failed to register GetUser: %v", err)
 	}
 

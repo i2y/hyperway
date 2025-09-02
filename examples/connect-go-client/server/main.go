@@ -231,14 +231,14 @@ func main() {
 	)
 
 	// Register methods
-	rpc.MustRegister(svc, "CreateUser", userService.CreateUser)
-	rpc.MustRegister(svc, "GetUser", userService.GetUser)
-	rpc.MustRegister(svc, "ListUsers", userService.ListUsers)
+	svc.MustRegister("CreateUser", userService.CreateUser)
+	svc.MustRegister("GetUser", userService.GetUser)
+	svc.MustRegister("ListUsers", userService.ListUsers)
 
 	// Register streaming methods
-	rpc.MustRegisterServerStream(svc, "StreamUsers", userService.StreamUsers)
-	rpc.MustRegisterClientStream(svc, "BatchCreateUsers", userService.BatchCreateUsers)
-	rpc.MustRegisterBidiStream(svc, "UserChat", userService.UserChat)
+	svc.MustRegisterServerStream("StreamUsers", userService.StreamUsers)
+	svc.MustRegisterClientStream("BatchCreateUsers", userService.BatchCreateUsers)
+	svc.MustRegisterBidiStream("UserChat", userService.UserChat)
 
 	// Export proto file if requested
 	if len(os.Args) > 1 && os.Args[1] == "export-proto" {

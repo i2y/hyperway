@@ -28,7 +28,7 @@ func TestExportProto(t *testing.T) {
 	// Create a test service
 	svc := rpc.NewService("TestService", rpc.WithPackage("test.v1"))
 
-	if err := rpc.Register(svc, "TestMethod", testHandler); err != nil {
+	if err := rpc.RegisterAs(svc, "TestMethod", testHandler); err != nil {
 		t.Fatal(err)
 	}
 
@@ -66,7 +66,7 @@ func TestExportAllProtos(t *testing.T) {
 	// Create a test service
 	svc := rpc.NewService("TestService", rpc.WithPackage("test.v1"))
 
-	if err := rpc.Register(svc, "TestMethod", testHandler); err != nil {
+	if err := rpc.RegisterAs(svc, "TestMethod", testHandler); err != nil {
 		t.Fatal(err)
 	}
 
@@ -123,7 +123,7 @@ func TestExportToZip(t *testing.T) {
 	// Create a test service
 	svc := rpc.NewService("TestService", rpc.WithPackage("test.v1"))
 
-	if err := rpc.Register(svc, "TestMethod", testHandler); err != nil {
+	if err := rpc.RegisterAs(svc, "TestMethod", testHandler); err != nil {
 		t.Fatal(err)
 	}
 
@@ -155,7 +155,7 @@ func TestExportOptions(t *testing.T) {
 	// Create a test service
 	svc := rpc.NewService("TestService", rpc.WithPackage("test.v1"))
 
-	if err := rpc.Register(svc, "TestMethod", testHandler); err != nil {
+	if err := rpc.RegisterAs(svc, "TestMethod", testHandler); err != nil {
 		t.Fatal(err)
 	}
 
@@ -205,7 +205,7 @@ func TestLanguageOptions(t *testing.T) {
 	// Create a test service
 	svc := rpc.NewService("TestService", rpc.WithPackage("test.v1"))
 
-	if err := rpc.Register(svc, "TestMethod", testHandler); err != nil {
+	if err := rpc.RegisterAs(svc, "TestMethod", testHandler); err != nil {
 		t.Fatal(err)
 	}
 
@@ -341,7 +341,7 @@ func TestExportAllProtosWithLanguageOptions(t *testing.T) {
 	// Create a test service
 	svc := rpc.NewService("TestService", rpc.WithPackage("test.v1"))
 
-	if err := rpc.Register(svc, "TestMethod", testHandler); err != nil {
+	if err := rpc.RegisterAs(svc, "TestMethod", testHandler); err != nil {
 		t.Fatal(err)
 	}
 

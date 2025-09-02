@@ -31,7 +31,7 @@ func TestEmptyType(t *testing.T) {
 	}
 
 	// Register handler
-	if err := rpc.Register(svc, "TestEmpty", handlerFunc); err != nil {
+	if err := rpc.RegisterAs(svc, "TestEmpty", handlerFunc); err != nil {
 		t.Fatal(err)
 	}
 
@@ -107,7 +107,7 @@ func TestEmptyTag(t *testing.T) {
 	}
 
 	// Register handler
-	if err := rpc.Register(svc, "TestTaggedEmpty", handlerFunc); err != nil {
+	if err := rpc.RegisterAs(svc, "TestTaggedEmpty", handlerFunc); err != nil {
 		t.Fatal(err)
 	}
 

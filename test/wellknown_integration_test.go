@@ -44,7 +44,7 @@ func TestWellKnownTypesIntegration(t *testing.T) {
 	}
 
 	// Register handler
-	if err := rpc.Register(svc, "Process", handlerFunc); err != nil {
+	if err := rpc.RegisterAs(svc, "Process", handlerFunc); err != nil {
 		t.Fatal(err)
 	}
 
@@ -159,7 +159,7 @@ func TestWellKnownTypesWithMaps(t *testing.T) {
 	}
 
 	// Register handler
-	if err := rpc.Register(svc, "CountProperties", handlerFunc); err != nil {
+	if err := rpc.RegisterAs(svc, "CountProperties", handlerFunc); err != nil {
 		t.Fatal(err)
 	}
 
@@ -240,7 +240,7 @@ func TestFieldMaskProcessing(t *testing.T) {
 	}
 
 	// Register handler
-	if err := rpc.Register(svc, "Update", handlerFunc); err != nil {
+	if err := rpc.RegisterAs(svc, "Update", handlerFunc); err != nil {
 		t.Fatal(err)
 	}
 

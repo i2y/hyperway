@@ -19,7 +19,7 @@ func TestGRPCWebWithConnectGo(t *testing.T) {
 	svc := rpc.NewService("TestService", rpc.WithPackage("test.v1"))
 
 	// Register handler - using the protobuf types
-	err := rpc.Register(svc, "Echo", func(ctx context.Context, req *testpb.EchoRequest) (*testpb.EchoResponse, error) {
+	err := rpc.RegisterAs(svc, "Echo", func(ctx context.Context, req *testpb.EchoRequest) (*testpb.EchoResponse, error) {
 		return &testpb.EchoResponse{
 			Message: "Echo: " + req.Message,
 		}, nil
