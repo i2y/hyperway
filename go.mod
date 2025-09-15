@@ -1,9 +1,9 @@
 module github.com/i2y/hyperway
 
-go 1.24
+go 1.24.0
 
 require (
-	buf.build/go/hyperpb v0.1.0
+	buf.build/go/hyperpb v0.1.1
 	connectrpc.com/grpcreflect v1.3.0
 	github.com/andybalholm/brotli v1.2.0
 	github.com/go-playground/validator/v10 v10.27.0
@@ -31,6 +31,6 @@ require (
 	golang.org/x/crypto v0.41.0 // indirect
 	golang.org/x/sys v0.35.0 // indirect
 	golang.org/x/text v0.28.0 // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20250603155806-513f23925822 // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20250811230008-5f3141c8851a // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
