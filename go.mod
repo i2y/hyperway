@@ -8,7 +8,7 @@ require (
 	github.com/andybalholm/brotli v1.2.0
 	github.com/go-playground/validator/v10 v10.27.0
 	github.com/jhump/protoreflect/v2 v2.0.0-beta.2
-	github.com/klauspost/compress v1.18.0
+	github.com/klauspost/compress v1.18.1
 	github.com/spf13/cobra v1.9.1
 	golang.org/x/net v0.43.0
 	google.golang.org/grpc v1.74.2
