@@ -1,8 +1,6 @@
 module github.com/i2y/hyperway/examples/connect-go-client
 
-go 1.24
-
-toolchain go1.24.3
+go 1.25
 
 require (
 	connectrpc.com/connect v1.18.1
